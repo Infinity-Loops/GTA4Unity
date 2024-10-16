@@ -198,21 +198,27 @@ public class WorldComposerMachine : MonoBehaviour
 
     public File FindGameFile(GTADatLoader loader, string filename)
     {
-        File result = null;
-        object locker = new object();
+        // Old File Loading
 
-        Parallel.For(0, loader.imgLoader.imgs.Count, (i, state) =>
-        {
-            var found = loader.imgLoader.imgs[i].FindItem(filename);
-            if (found != null)
-            {
-                lock (locker)
-                {
-                    result = found;
-                }
-                state.Break();
-            }
-        });
+        //File result = null;
+        //object locker = new object();
+
+        //Parallel.For(0, loader.imgLoader.imgs.Count, (i, state) =>
+        //{
+        //    var found = loader.imgLoader.imgs[i].FindItem(filename);
+        //    if (found != null)
+        //    {
+        //        lock (locker)
+        //        {
+        //            result = found;
+        //        }
+        //        state.Break();
+        //    }
+        //});
+
+        File result = null;
+
+        loader.gameFiles.TryGetValue(filename.ToLower(), out result);
 
         return result;
     }
@@ -468,17 +474,22 @@ public class WorldComposerMachine : MonoBehaviour
                             {
                                 var unityMaterial = new Material(Shader.Find("gta_default"));
                                 unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
+                                unityMaterial.enableInstancing = true;
 
-                                if (textureCache.TryGetValue(rageMaterial.textureName, out var cachedTex))
+                                if (!string.IsNullOrEmpty(rageMaterial.textureName))
                                 {
-                                    unityMaterial.SetTexture("_MainTex", cachedTex);
+                                    if (textureCache.TryGetValue(rageMaterial.textureName, out var cachedTex))
+                                    {
+                                        unityMaterial.SetTexture("_MainTex", cachedTex);
+                                    }
+                                    else
+                                    {
+                                        var tex2d = rageMaterial.mainTex.GetUnityTexture();
+                                        unityMaterial.SetTexture("_MainTex", tex2d);
+                                        textureCache.Add(rageMaterial.textureName, tex2d);
+                                    }
                                 }
-                                else
-                                {
-                                    var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                    unityMaterial.SetTexture("_MainTex", tex2d);
-                                    textureCache.Add(rageMaterial.textureName, tex2d);
-                                }
+
 
                                 rendererChildren.sharedMaterial = unityMaterial;
                             }
@@ -498,6 +509,7 @@ public class WorldComposerMachine : MonoBehaviour
                             {
                                 var unityMaterial = new Material(Shader.Find("gta_default"));
                                 unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
+                                unityMaterial.enableInstancing = true;
 
                                 if (!string.IsNullOrEmpty(rageMaterial.textureName))
                                 {
@@ -513,15 +525,6 @@ public class WorldComposerMachine : MonoBehaviour
                                         {
                                             textureCache.Add(rageMaterial.textureName, tex2d);
                                         }
-                                    }
-                                }
-                                else
-                                {
-                                    var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                    unityMaterial.SetTexture("_MainTex", tex2d);
-                                    if (!string.IsNullOrEmpty(rageMaterial.textureName))
-                                    {
-                                        textureCache.Add(rageMaterial.textureName, tex2d);
                                     }
                                 }
 
@@ -615,13 +618,8 @@ public class WorldComposerMachine : MonoBehaviour
         waterTexture.Open(waterTextureStream);
         var waterImage = waterTexture.Textures[0].Decode();
         waterTextureStream.Close();
-        var unityMaterial = new Material(Shader.Find("Standard"));
+        var unityMaterial = new Material(Shader.Find("water"));
         unityMaterial.SetTexture("_MainTex", waterImage.GetUnityTexture());
-        unityMaterial.SetFloat("_Mode", 2);
-        unityMaterial.SetFloat("_Metallic", 1);
-        unityMaterial.SetFloat("_Glossiness", 1);
-        unityMaterial.SetColor("_Color", new Color(1, 1, 1, 0.8078431f));
-        unityMaterial.EnableKeyword("_ALPHABLEND_ON");
         renderer.material = unityMaterial;
     }
 

@@ -39,7 +39,7 @@ namespace RageLib.Textures.Decoder
                     data = DXTDecoder.DecodeDXT1(data, (int)width, (int)height);
                     break;
                 case TextureType.DXT3:
-                    data = DXTDecoder.ConvertDXT3ToDXT1(DXTDecoder.DecodeDXT3(data, (int)width, (int)height));
+                    data = DXTDecoder.DecodeDXT3(data, (int)width, (int)height);
                     break;
                 case TextureType.DXT5:
                     data = DXTDecoder.DecodeDXT5(data, (int)width, (int)height);

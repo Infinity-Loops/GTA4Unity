@@ -18,6 +18,7 @@
 
 \**********************************************************************/
 
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace RageLib.FileSystem.Common
@@ -100,5 +101,35 @@ namespace RageLib.FileSystem.Common
             }
             return null;
         }
+
+        public List<Common.File> GetAllFiles()
+        {
+            List<Common.File> files = new List<File>();
+            foreach (var entry in RootDirectory)
+            {
+                AddFilesFromDirectory(files, entry);
+            }
+            return files;
+        }
+
+        private void AddFilesFromDirectory(List<Common.File> files, Common.FSObject entry)
+        {
+            if(entry != null)
+            {
+                if (!entry.IsDirectory)
+                {
+                    files.Add((Common.File)entry);
+                }
+                else
+                {
+                    var directory = (Common.Directory)entry;
+                    foreach (var item in directory)
+                    {
+                        AddFilesFromDirectory(files, item);
+                    }
+                }
+            }
+        }
+
     }
 }

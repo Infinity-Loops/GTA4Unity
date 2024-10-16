@@ -25,6 +25,8 @@ public class GTADatLoader
     public List<string> colFile = new();
     public List<string> splash = new();
 
+    public Dictionary<string, File> gameFiles = new Dictionary<string, File>();
+
     internal IMGLoader imgLoader;
     internal IDELoader ideLoader;
     internal IPLLoader iplLoader;
@@ -131,7 +133,7 @@ public class GTADatLoader
                 //if (wplFile.Name.Contains("bronx")) Load Only Bronx Area
                 // {
                 ipl.Add(wplFile.Name);
-                iplLoader.LoadIPL(wplFile.GetData());
+                iplLoader.LoadIPL(wplFile.Name, wplFile.GetData());
                 // }
             }
 
@@ -153,6 +155,25 @@ public class GTADatLoader
                 waterPlanes.Add(waterData);
             }
 
+        });
+
+        await Task.Run(() =>
+        {
+            Debug.Log("Caching game files...");
+
+            for (int i = 0; i < imgLoader.imgs.Count; i++)
+            {
+                List<File> files = imgLoader.imgs[i].GetAllFiles();
+
+                for (int j = 0; j < files.Count; j++)
+                {
+                    var file = files[j];
+
+                    gameFiles[file.Name.ToLower()] = file;
+                }
+
+                Debug.Log($"Cached files for: {imgLoader.imgs[i].ToString()}");
+            }
         });
 
         Debug.Log("Finished loading.");
@@ -219,14 +240,11 @@ public class GTADatLoader
 
     void SearchFilesRecursively(string directory, string extension, List<string> filePaths)
     {
-        // Obter arquivos na pasta atual que correspondem à extensão
         foreach (string file in System.IO.Directory.GetFiles(directory, $"*{extension}"))
         {
-            // Adiciona o caminho absoluto do arquivo à lista
             filePaths.Add(file);
         }
 
-        // Recursivamente buscar em subdiretórios
         foreach (string subDirectory in System.IO.Directory.GetDirectories(directory))
         {
             SearchFilesRecursively(subDirectory, extension, filePaths);
