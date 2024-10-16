@@ -46,7 +46,7 @@ public class GTADatLoader
             imgLoader = new IMGLoader(gameDir);
 
             List<string> imgFiles = new List<string>();
-            
+
             SearchFilesRecursively(gameDir, ".img", imgFiles);
 
             imgList = imgFiles;
@@ -128,11 +128,11 @@ public class GTADatLoader
 
             foreach (File wplFile in wplFiles)
             {
-                if (wplFile.Name.Contains("bronx"))
-                {
-                    ipl.Add(wplFile.Name);
-                    iplLoader.LoadIPL(wplFile.GetData());
-                }
+                //if (wplFile.Name.Contains("bronx")) Load Only Bronx Area
+                // {
+                ipl.Add(wplFile.Name);
+                iplLoader.LoadIPL(wplFile.GetData());
+                // }
             }
 
             //iplLoader = new IPLLoader();
