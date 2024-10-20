@@ -20,6 +20,8 @@
 
 using System.Collections.Generic;
 using RageLib.Common.ResourceTypes;
+using UnityEngine;
+using Vector4 = RageLib.Common.ResourceTypes.Vector4;
 
 namespace RageLib.Models.Data
 {
@@ -28,9 +30,24 @@ namespace RageLib.Models.Data
         public Bone Parent { get; private set; }
         public string Name { get; private set; }
         public int Index { get; private set; }
-        
+
         public Vector4 Position { get; private set; }
         public Vector4 Rotation { get; private set; }
+
+        public UnityEngine.Vector3 GetUnityPosition
+        {
+            get
+            {
+                return new UnityEngine.Vector3(Position.X, Position.Y, Position.Z);
+            }
+        }
+        public Quaternion GetUnityRotation
+        {
+            get
+            {
+                return new Quaternion(Rotation.X, Rotation.Y, Rotation.Z, 1);
+            }
+        }
 
         public Vector4 AbsolutePosition { get; private set; }
         public Vector4 AbsoluteRotation { get; private set; }

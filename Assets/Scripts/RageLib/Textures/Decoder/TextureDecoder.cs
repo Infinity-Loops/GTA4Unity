@@ -19,6 +19,9 @@
 \**********************************************************************/
 
 using System;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
 
 namespace RageLib.Textures.Decoder
@@ -36,46 +39,68 @@ namespace RageLib.Textures.Decoder
             switch (texture.TextureType)
             {
                 case TextureType.DXT1:
-                    data = DXTDecoder.DecodeDXT1(data, (int)width, (int)height);
+                    texture2D.format = TextureFormat.DXT1;
                     break;
                 case TextureType.DXT3:
-                    data = DXTDecoder.DecodeDXT3(data, (int)width, (int)height);
+                    texture2D.format = TextureFormat.DXT5;
+                    data = ConvertDXT3ToDXT5(data);
                     break;
                 case TextureType.DXT5:
-                    data = DXTDecoder.DecodeDXT5(data, (int)width, (int)height);
+                    texture2D.format = TextureFormat.DXT5;
                     break;
                 case TextureType.A8R8G8B8:
-                    //Nothing to do
+                    texture2D.format = TextureFormat.RGBA32;
                     break;
                 case TextureType.L8:
-                    {
-                        // L8 to RGBA32
-                        var newData = new byte[width * height * 4];
-                        for (int i = 0; i < data.Length; i++)
-                        {
-                            newData[i * 4 + 0] = data[i];  // R
-                            newData[i * 4 + 1] = data[i];  // G
-                            newData[i * 4 + 2] = data[i];  // B
-                            newData[i * 4 + 3] = 255;      // A (opaque)
-                        }
-                        data = newData;
-                    }
+                    texture2D.format = TextureFormat.RGBA32;
                     break;
-                default:
-                    throw new ArgumentOutOfRangeException();
             }
 
-            Color32[] pixels = new Color32[width * height];
-
-            for (int i = 0; i < pixels.Length; i++)
-            {
-                int offset = i * 4;
-                pixels[i] = new Color32(data[offset + 0], data[offset + 1], data[offset + 2], data[offset + 3]);
-            }
+            texture2D.pixels = data;
             texture2D.name = $"{texture.Name}@{texture.TextureType.ToString()}";
-            texture2D.pixels = pixels;
 
             return texture2D;
+        }
+
+        private static byte[] ConvertDXT3ToDXT5(byte[] data)
+        {
+            for (var i = 0; i < data.Length; i += 16)
+            {
+                ulong packed = 0;
+
+                for (var j = 0; j < 16; ++j)
+                {
+                    var s = 1 | ((j & 1) << 2);
+                    var c = (data[i + (j >> 1)] >> s) & 0x7;
+
+                    switch (c)
+                    {
+                        case 0:
+                            c = 1;
+                            break;
+
+                        case 7:
+                            c = 0;
+                            break;
+
+                        default:
+                            c = 8 - c;
+                            break;
+                    }
+
+                    packed |= ((ulong)c << (3 * j));
+                }
+
+                data[i + 0] = 0xff;
+                data[i + 1] = 0x00;
+
+                for (var j = 0; j < 6; ++j)
+                {
+                    data[i + 2 + j] = (byte)((packed >> (j << 3)) & 0xff);
+                }
+            }
+
+            return data;
         }
     }
 }

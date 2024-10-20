@@ -43,8 +43,19 @@ public class Loader : MonoBehaviour
 
         gameLoader = new GTADatLoader(gameDir, (RealFileSystem)fs);
 
+        SetupLoadingScreenImages();
 
         await gameLoader.LoadGameFiles(() => { MainThreadDispatcher.ExecuteOnMainThread(() => { composer.ComposeWorld(gameLoader); }); });
 
+    }
+
+    private void SetupLoadingScreenImages()
+    {
+        Directory pcDirectory = (Directory)fs.RootDirectory.FindByName("pc");
+        Directory texturesDirectory = (Directory)pcDirectory.FindByName("textures");
+
+        File loadingScreen = (File)texturesDirectory.FindByName("loadingscreens.wtd");
+
+        LoadingScreen.SetupLoadingImages(loadingScreen);
     }
 }

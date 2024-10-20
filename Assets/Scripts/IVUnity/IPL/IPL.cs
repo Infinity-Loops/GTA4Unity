@@ -9,6 +9,7 @@ using UnityEngine;
 
 public class IPL
 {
+    public string name;
     public List<Ipl_AUZO> ipl_auzo = new();
     public List<Ipl_CARS> ipl_cars = new();
     public List<Ipl_CULL> ipl_cull = new();
@@ -49,8 +50,10 @@ public class IPL
     BinaryReader reader;
     MemoryStream stream;
 
-    public IPL(byte[] data)
+    public IPL(byte[] data, string name)
     {
+        this.name = name;
+
         stream = new MemoryStream(data);
         reader = new BinaryReader(stream);
         ReadHeader(reader);
@@ -440,7 +443,7 @@ public class Ipl_INST : IPL_Item
         if (name == null)
         {
             name = "";
-            Debug.LogError($"Hash {hash} not found for IPL Instance.");
+            //Debug.LogError($"Hash {hash} not found for IPL Instance.");
         }
 
         unknown1 = reader.ReadInt();

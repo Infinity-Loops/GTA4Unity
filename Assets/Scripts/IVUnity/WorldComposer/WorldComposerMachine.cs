@@ -7,6 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Directory = RageLib.FileSystem.Common.Directory;
@@ -16,6 +17,8 @@ public class WorldComposerMachine : MonoBehaviour
 {
     [Header("Settings")]
     //Reimplementation
+    public GameObject staticGeometryPrefab;
+    private int staticGeometryInstanceID;
     private GameObject worldContainer;
     private int loadedObjects;
     //Rage
@@ -27,11 +30,17 @@ public class WorldComposerMachine : MonoBehaviour
     private Dictionary<string, Mesh> meshCache = new Dictionary<string, Mesh>();
     private Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
     private Dictionary<string, Texture2D> textureCache = new Dictionary<string, Texture2D>();
+    private NativeArray<int> staticGeometriesInstances;
+    private NativeArray<int> staticGeometriesTransformInstances;
+
     public async void ComposeWorld(GTADatLoader loader)
     {
         GenerateContainer();
 
         ComposeWater(loader.waterPlanes, loader.root);
+
+        LoadSceneInstances(loader);
+
         //ComposeMap(loader);
         await ComposeMapAccurate(loader);
     }
@@ -44,27 +53,39 @@ public class WorldComposerMachine : MonoBehaviour
         worldContainer.transform.localRotation = Quaternion.Euler(0, 0, 0);
     }
 
+    void LoadSceneInstances(GTADatLoader loader)
+    {
+        Debug.Log("Loading IPL Batch...");
+
+        LoadingScreen.SetupLoadingTarget(loader.iplLoader.ipls.Count);
+
+        foreach (var ipl in loader.iplLoader.ipls)
+        {
+            lock (sceneInstances)
+            {
+                LoadingScreen.AdvanceProgress(ipl.name, ipl.ipl_inst.Count);
+                sceneInstances.AddRange(ipl.ipl_inst);
+            }
+        }
+
+        AllocateGameObjects(staticGeometryInstanceID, sceneInstances.Count, ref staticGeometriesInstances, ref staticGeometriesTransformInstances);
+    }
+
     async Task ComposeMapAccurate(GTADatLoader loader)
     {
         Debug.Log("Composing map...");
 
-        Debug.Log("Loading IPL Batch...");
-        await Task.Run(() =>
-        {
-            foreach (var ipl in loader.iplLoader.ipls)
-            {
-                lock (sceneInstances)
-                {
-                    sceneInstances.AddRange(ipl.ipl_inst);
-                }
-            }
-        });
+        LoadingScreen.ResetProgress();
 
         Debug.Log("Loading IDE Batch...");
+
         await Task.Run(() =>
         {
             foreach (var ide in loader.ideLoader.ides)
             {
+                LoadingScreen.ResetProgress();
+                LoadingScreen.SetupLoadingTarget(ide.items_objs.Count);
+
                 foreach (var obj in ide.items_objs)
                 {
                     lock (gameObjectDict)
@@ -74,68 +95,112 @@ public class WorldComposerMachine : MonoBehaviour
                             gameObjectDict.Add(obj.modelName, obj);
                         }
                     }
+
+                    LoadingScreen.AdvanceProgress(obj.modelName);
                 }
+
+                //if(ide.items_tobj.Count > 0)
+                //{
+                //    LoadingScreen.ResetProgress();
+                //    LoadingScreen.SetupLoadingTarget(ide.items_objs.Count);
+
+                //    foreach (var obj in ide.items_tobj)
+                //    {
+                //        lock (gameObjectDict)
+                //        {
+                //            if (!gameObjectDict.ContainsKey(obj.modelName))
+                //            {
+                //                gameObjectDict.Add(obj.modelName, obj);
+                //            }
+                //        }
+
+                //        LoadingScreen.AdvanceProgress(obj.modelName);
+                //    }
+                //}
+
             }
         });
 
+
+        LoadingScreen.Finish();
+        GameCore.SetReady(loader);
+
         Debug.Log("Loading Item Definitions");
 
-        await ProcessItemsInBatches(sceneInstances, 128, loader);
+        await ProcessItems(sceneInstances, loader);
 
         Debug.Log("Map composition finished.");
     }
 
-    async Task ProcessItemsInBatches(List<Ipl_INST> sceneInstances, int batchSize, GTADatLoader loader)
+    async Task ProcessItems(List<Ipl_INST> sceneInstances, GTADatLoader loader)
     {
-        for (int i = 0; i < sceneInstances.Count; i += batchSize)
+        for (int i = 0; i < sceneInstances.Count; i++)
         {
-            int end = Math.Min(i + batchSize, sceneInstances.Count);
-            var batch = sceneInstances.GetRange(i, end - i);
+            var itemInstance = sceneInstances[i];
 
-            await Task.Run(() =>
+            if (gameObjectDict.TryGetValue(itemInstance.name, out var equivalentItemGameObject))
             {
-                for (int j = 0; j < batch.Count; j++)
+                File gameItem = null;
+                string modelName = "";
+
+                if (!string.IsNullOrEmpty(equivalentItemGameObject.wdd) && !equivalentItemGameObject.wdd.Equals("null", StringComparison.OrdinalIgnoreCase))
                 {
-                    var itemInstance = batch[j];
-
-                    if (gameObjectDict.TryGetValue(itemInstance.name, out var equivalentItemGameObject))
-                    {
-                        File gameItem = null;
-                        string modelName = "";
-
-                        if (!string.IsNullOrEmpty(equivalentItemGameObject.wdd) && !equivalentItemGameObject.wdd.Equals("null", StringComparison.OrdinalIgnoreCase))
-                        {
-                            modelName = equivalentItemGameObject.wdd + ".wdd";
-                            gameItem = FindGameFile(loader, modelName);
-                        }
-                        else
-                        {
-                            modelName = equivalentItemGameObject.modelName + ".wdr";
-                            gameItem = FindGameFile(loader, modelName) ?? FindGameFile(loader, equivalentItemGameObject.modelName + ".wft");
-                        }
-
-                        if (gameItem != null)
-                        {
-                            ProcessGameItem(loader, gameItem, equivalentItemGameObject, itemInstance);
-                        }
-                    }
+                    modelName = equivalentItemGameObject.wdd + ".wdd";
+                    gameItem = FindGameFile(loader, modelName);
                 }
-            });
+                else
+                {
+                    modelName = equivalentItemGameObject.modelName + ".wdr";
+                    gameItem = FindGameFile(loader, modelName) ?? FindGameFile(loader, equivalentItemGameObject.modelName + ".wft");
+                }
+
+                if (gameItem != null)
+                {
+                    ProcessGameItem(loader, gameItem, equivalentItemGameObject, itemInstance, staticGeometriesInstances[i], staticGeometriesTransformInstances[i]);
+                }
+            }
 
             await Task.Yield();
         }
     }
 
+    private void AllocateGameObjects(int targetInstanceID, int count, ref NativeArray<int> instanceIds, ref NativeArray<int> transformIds)
+    {
+        instanceIds = new NativeArray<int>(count, Allocator.Persistent);
+        transformIds = new NativeArray<int>(count, Allocator.Persistent);
 
-    private void ProcessGameItem(GTADatLoader loader, File gameItem, Item_OBJS equivalentItemGameObject, Ipl_INST itemInstance)
+        GameObject.InstantiateGameObjects(targetInstanceID, count, instanceIds, transformIds);
+
+        List<UnityEngine.Object> objects = new List<UnityEngine.Object>();
+
+        Resources.InstanceIDToObjectList(transformIds, objects);
+
+        foreach (Transform item in objects)
+        {
+            item.parent = worldContainer.transform;
+        }
+
+        //Not necessary no improvements 
+
+        //objects.Clear();
+
+        //Resources.InstanceIDToObjectList(instanceIds, objects);
+
+        //foreach (GameObject item in objects)
+        //{
+        //    item.hideFlags = HideFlags.HideInHierarchy;
+        //}
+    }
+
+
+    private void ProcessGameItem(GTADatLoader loader, File gameItem, Item_OBJS equivalentItemGameObject, Ipl_INST itemInstance, int gameObject, int transform)
     {
         if (gameItem.Name.EndsWith(".wdr"))
         {
             ModelFile model = new ModelFile();
             TextureFile textureFile = null;
             TextureFile[] textureCollection = new TextureFile[1];
-
-            Debug.Log($"Loading WDR: {gameItem.Name}");
+            //Debug.Log($"Loading WDR: {gameItem.Name}");
 
             using (MemoryStream modelStream = new MemoryStream(gameItem.GetData()))
             {
@@ -164,7 +229,7 @@ public class WorldComposerMachine : MonoBehaviour
                     try
                     {
                         textureFile = new TextureFile();
-                        Debug.Log($"Opening Texture: {texName}");
+                        //Debug.Log($"Opening Texture: {texName}");
                         textureFile.Open(textureStream);
                         textureCollection[0] = textureFile;
                     }
@@ -173,17 +238,11 @@ public class WorldComposerMachine : MonoBehaviour
                         textureCollection = null;
                     }
                 }
-                MainThreadDispatcher.ExecuteOnMainThread(() =>
-                {
-                    LoadModel(model, textureCollection, itemInstance, gameItem);
-                });
+                LoadModel(model, textureCollection, itemInstance, gameItem, gameObject, transform);
             }
             else
             {
-                MainThreadDispatcher.ExecuteOnMainThread(() =>
-                {
-                    LoadModel(model, null, itemInstance, gameItem);
-                });
+                LoadModel(model, null, itemInstance, gameItem, gameObject, transform);
             }
         }
         else if (gameItem.Name.EndsWith(".wdd"))
@@ -198,24 +257,6 @@ public class WorldComposerMachine : MonoBehaviour
 
     public File FindGameFile(GTADatLoader loader, string filename)
     {
-        // Old File Loading
-
-        //File result = null;
-        //object locker = new object();
-
-        //Parallel.For(0, loader.imgLoader.imgs.Count, (i, state) =>
-        //{
-        //    var found = loader.imgLoader.imgs[i].FindItem(filename);
-        //    if (found != null)
-        //    {
-        //        lock (locker)
-        //        {
-        //            result = found;
-        //        }
-        //        state.Break();
-        //    }
-        //});
-
         File result = null;
 
         loader.gameFiles.TryGetValue(filename.ToLower(), out result);
@@ -401,45 +442,30 @@ public class WorldComposerMachine : MonoBehaviour
     //}
     #endregion
 
-    void LoadModel(IModelFile model, TextureFile[] collection, Ipl_INST definitions, File modelFile)
+    void LoadModel(IModelFile model, TextureFile[] collection, Ipl_INST definitions, File modelFile, int gameObject, int transform)
     {
-        ModelNode cachedModel = null;
-        RageMaterial cachedTextures = null;
-
-        // Verifica se o modelo já está no cache
-        if (!modelCache.TryGetValue(modelFile.Name, out cachedModel))
+        if (Resources.InstanceIDIsValid(gameObject))
         {
-            // O modelo não está no cache, então precisamos processá-lo
-            var modelNode = model.GetModel(collection);
-            cachedModel = modelNode;
-            modelCache[modelFile.Name] = cachedModel; // Adiciona ao cache
+            ModelNode cachedModel = null;
 
-            GameObject modelInstance = new GameObject(modelFile.Name);
+            if (!modelCache.TryGetValue(modelFile.Name, out cachedModel))
+            {
+                var modelNode = model.GetModel(collection);
+                cachedModel = modelNode;
+                modelCache[modelFile.Name] = cachedModel;
+                loadedObjects++;
+            }
+
+            GameObject gameObjectInstance = (GameObject)Resources.InstanceIDToObject(gameObject);
+            gameObjectInstance.name = modelFile.Name;
 
             Quaternion rotation = Quaternion.Euler(-90, 0, 0);
             Vector3 newPosition = rotation * definitions.position;
 
-            modelInstance.transform.position = newPosition;
-            modelInstance.transform.rotation = rotation * definitions.unityRotation;
-            modelInstance.transform.parent = worldContainer.transform;
+            gameObjectInstance.transform.position = newPosition;
+            gameObjectInstance.transform.rotation = rotation * definitions.unityRotation;
 
-            LoadModelRecursive(modelInstance, modelNode, modelFile.Name);
-            loadedObjects++;
-        }
-        else
-        {
-            // Se o modelo está no cache, só instancia a geometria diretamente
-            GameObject modelInstance = new GameObject(modelFile.Name);
-
-            Quaternion rotation = Quaternion.Euler(-90, 0, 0);
-            Vector3 newPosition = rotation * definitions.position;
-
-            modelInstance.transform.position = newPosition;
-            modelInstance.transform.rotation = rotation * definitions.unityRotation;
-            modelInstance.transform.parent = worldContainer.transform;
-
-
-            LoadModelRecursive(modelInstance, cachedModel, modelFile.Name);
+            LoadModelRecursive(gameObjectInstance, cachedModel, modelFile.Name);
         }
     }
 
@@ -482,11 +508,14 @@ public class WorldComposerMachine : MonoBehaviour
                                     {
                                         unityMaterial.SetTexture("_MainTex", cachedTex);
                                     }
-                                    else
+                                    else 
                                     {
-                                        var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                        unityMaterial.SetTexture("_MainTex", tex2d);
-                                        textureCache.Add(rageMaterial.textureName, tex2d);
+                                        if(rageMaterial.mainTex != null)
+                                        {
+                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
+                                            unityMaterial.SetTexture("_MainTex", tex2d);
+                                            textureCache.Add(rageMaterial.textureName, tex2d);
+                                        }
                                     }
                                 }
 
@@ -519,10 +548,10 @@ public class WorldComposerMachine : MonoBehaviour
                                     }
                                     else
                                     {
-                                        var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                        unityMaterial.SetTexture("_MainTex", tex2d);
-                                        if (!string.IsNullOrEmpty(rageMaterial.textureName))
+                                        if (!string.IsNullOrEmpty(rageMaterial.textureName) && rageMaterial.mainTex != null)
                                         {
+                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
+                                            unityMaterial.SetTexture("_MainTex", tex2d);
                                             textureCache.Add(rageMaterial.textureName, tex2d);
                                         }
                                     }
@@ -535,7 +564,7 @@ public class WorldComposerMachine : MonoBehaviour
                         meshCache.Add($"{originalName}_{i}", filterChildren.sharedMesh);
                     }
 
-
+                    children.AddComponent<MeshCollider>();
                 }
 
                 LoadModelRecursive(children, modelChildren, originalName);
@@ -551,6 +580,7 @@ public class WorldComposerMachine : MonoBehaviour
         waterModel.transform.parent = transform;
         waterModel.transform.localScale = Vector3.one * 0.1f;
         var renderer = waterModel.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
         var filter = waterModel.AddComponent<MeshFilter>();
 
         Mesh waterMesh = new Mesh();
@@ -623,5 +653,14 @@ public class WorldComposerMachine : MonoBehaviour
         renderer.material = unityMaterial;
     }
 
+    private void Awake()
+    {
+        staticGeometryInstanceID = staticGeometryPrefab.GetInstanceID();
+    }
 
+    void OnDestroy()
+    {
+        staticGeometriesInstances.Dispose();
+        staticGeometriesTransformInstances.Dispose();
+    }
 }

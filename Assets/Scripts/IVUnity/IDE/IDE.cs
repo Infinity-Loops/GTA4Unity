@@ -399,6 +399,24 @@ public class Item_TOBJ : IDE_Item
         timedFlags = int.Parse(split[16]);
         Hashes.table.AddData("hashes", Hasher.Hash(modelName).ToString(), modelName);
     }
+
+    public static implicit operator Item_OBJS(Item_TOBJ item_TOBJ)
+    {
+        var obj = new Item_OBJS();
+        obj.id = item_TOBJ.id;
+        obj.modelName = item_TOBJ.modelName;
+        obj.textureName = item_TOBJ.textureName;
+        obj.objectCount = item_TOBJ.objectCount;
+        obj.drawDistance = item_TOBJ.drawDistance;
+        obj.flag1 = item_TOBJ.flag1;
+        obj.flag2 = item_TOBJ.flag2;
+        obj.boundsMin = item_TOBJ.boundsMin;
+        obj.boundsMax = item_TOBJ.boundsMax;
+        obj.boundsSphere = item_TOBJ.boundsSphere;
+        obj.wdd = item_TOBJ.wdd;
+
+        return obj;
+    }
 }
 
 public class Item_TREE : IDE_Item

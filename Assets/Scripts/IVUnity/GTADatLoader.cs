@@ -14,7 +14,7 @@ public class GTADatLoader
 {
     private StreamReader reader;
 
-    private string gameDir;
+    internal string gameDir;
     private string path = "common/data/gta.dat";
 
     public List<string> img = new();
@@ -53,11 +53,16 @@ public class GTADatLoader
 
             imgList = imgFiles;
 
+            LoadingScreen.SetupLoadingTarget(imgList.Count);
+
             for (int i = 0; i < imgList.Count; i++)
             {
-                Debug.Log($"Loading IMG container: {gameDir}/{imgList[i].Replace(gameDir, "")}");
+                //Debug.Log($"Loading IMG container: {gameDir}/{imgList[i].Replace(gameDir, "")}");
+                LoadingScreen.AdvanceProgress(imgList[i]);
                 imgLoader.LoadManual(imgList[i]);
             }
+
+            LoadingScreen.ResetProgress();
 
             //for (int i = 0; i < imgList.Count; i++)
             //{
@@ -83,10 +88,15 @@ public class GTADatLoader
 
             ide = ideFiles;
 
+            LoadingScreen.SetupLoadingTarget(ide.Count);
+
             for (int i = 0; i < ide.Count; i++)
             {
+                LoadingScreen.AdvanceProgress(ide[i]);
                 ideLoader.LoadIDE($"{gameDir}/{ide[i].Replace(gameDir, "")}");
             }
+
+            LoadingScreen.ResetProgress();
 
             Debug.Log($"Total ide:{ideFiles.Count}");
 
@@ -128,14 +138,19 @@ public class GTADatLoader
 
             ipl.Clear();
 
+            LoadingScreen.SetupLoadingTarget(wplFiles.Count);
+
             foreach (File wplFile in wplFiles)
             {
                 //if (wplFile.Name.Contains("bronx")) Load Only Bronx Area
                 // {
+                LoadingScreen.AdvanceProgress(wplFile.Name);
                 ipl.Add(wplFile.Name);
                 iplLoader.LoadIPL(wplFile.Name, wplFile.GetData());
                 // }
             }
+
+            LoadingScreen.ResetProgress();
 
             //iplLoader = new IPLLoader();
 
@@ -148,12 +163,17 @@ public class GTADatLoader
         await Task.Run(() =>
         {
 
+            LoadingScreen.SetupLoadingTarget(water.Count);
+
             for (int i = 0; i < water.Count; i++)
             {
+                LoadingScreen.AdvanceProgress(water[i]);
                 Debug.Log($"Loading {gameDir}/{water[i]}");
                 var waterData = new Water($"{gameDir}/{water[i]}");
                 waterPlanes.Add(waterData);
             }
+
+            LoadingScreen.ResetProgress();
 
         });
 
@@ -164,17 +184,21 @@ public class GTADatLoader
             for (int i = 0; i < imgLoader.imgs.Count; i++)
             {
                 List<File> files = imgLoader.imgs[i].GetAllFiles();
+                LoadingScreen.ResetProgress();
+                LoadingScreen.SetupLoadingTarget(files.Count);
 
                 for (int j = 0; j < files.Count; j++)
                 {
                     var file = files[j];
-
+                    LoadingScreen.AdvanceProgress(file.Name);
                     gameFiles[file.Name.ToLower()] = file;
                 }
 
                 Debug.Log($"Cached files for: {imgLoader.imgs[i].ToString()}");
             }
         });
+
+        LoadingScreen.ResetProgress();
 
         Debug.Log("Finished loading.");
         OnFinishLoad.Invoke();

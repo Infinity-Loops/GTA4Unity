@@ -24,6 +24,7 @@ using System.IO;
 using System.Reflection;
 using RageLib.Common;
 using RageLib.FileSystem.RPF;
+using UnityEngine;
 using Directory=RageLib.FileSystem.Common.Directory;
 using File=RageLib.FileSystem.RPF.File;
 
@@ -41,10 +42,8 @@ namespace RageLib.FileSystem
         static RPFFileSystem()
         {
             _knownFilenames = new Dictionary<uint, string>();
-            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("RageLib.FileSystem.RPF.KnownFilenames.txt"))
+            using (var sw = System.IO.File.OpenText($"{Application.streamingAssetsPath}/KnownFilenames.txt"))
             {
-                var sw = new StreamReader(s);
-
                 string name;
                 while ((name = sw.ReadLine()) != null)
                 {

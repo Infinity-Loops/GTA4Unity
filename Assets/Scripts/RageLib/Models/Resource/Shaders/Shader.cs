@@ -19,6 +19,7 @@
 \**********************************************************************/
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using RageLib.Common;
 using RageLib.Common.Resources;
@@ -92,6 +93,8 @@ namespace RageLib.Models.Resource.Shaders
 
             // Data :
 
+            long save = br.BaseStream.Position;
+
             using (new StreamContext(br))
             {
                 br.BaseStream.Seek(shaderParamOffsetsOffset, SeekOrigin.Begin);
@@ -108,15 +111,16 @@ namespace RageLib.Models.Resource.Shaders
                 {
                     try
                     {
-                        var obj = ParamObjectFactory.Create((ParamType) ShaderParamTypes[i]);
+                        var obj = ParamObjectFactory.Create(ShaderParamTypes[i]);
 
                         br.BaseStream.Seek(ShaderParamOffsets[i], SeekOrigin.Begin);
                         obj.Read(br);
 
                         ShaderParams.Add((ParamNameHash) ShaderParamNames[i], obj);
                     }
-                    catch
+                    catch (System.Exception ex)
                     {
+                        UnityEngine.Debug.LogException(ex);
                         ShaderParams.Add((ParamNameHash) ShaderParamNames[i], null);
                     }
                 }

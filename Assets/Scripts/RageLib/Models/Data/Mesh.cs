@@ -101,5 +101,23 @@ namespace RageLib.Models.Data
 
             return vertices;
         }
+
+        public CleanVertex[] DecodeUnityBurstVertexData()
+        {
+            byte[] vertexData = VertexData;
+            CleanVertex[] vertices = new CleanVertex[VertexCount];
+
+            using (MemoryStream ms = new MemoryStream(vertexData))
+            {
+                BinaryReader br = new BinaryReader(ms);
+                for (int i = 0; i < VertexCount; i++)
+                {
+                    ms.Seek(i * VertexStride, SeekOrigin.Begin);
+                    vertices[i] = new Vertex(br, this);
+                }
+            }
+
+            return vertices;
+        }
     }
 }

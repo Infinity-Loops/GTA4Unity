@@ -39,7 +39,7 @@ public class IniJson : Dictionary<string, Dictionary<string, object>>
 
         if (HasOption(columm, row))
         {
-            Debug.Log($"Hash found {columm}|{row}");
+            //Debug.Log($"Hash found {columm}|{row}");
             return (T)this[columm.ToLower()][row.ToLower()];
         }
         else

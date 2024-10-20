@@ -24,9 +24,9 @@ namespace RageLib.Models.Resource.Shaders
 {
     internal static class ParamObjectFactory
     {
-        public static IShaderParam Create(ParamType type)
+        public static IShaderParam Create(int type)
         {
-            switch(type)
+            switch((ParamType)type)
             {
                 case ParamType.Texture:
                     return new ShaderParamTexture();
@@ -34,8 +34,12 @@ namespace RageLib.Models.Resource.Shaders
                     return new ShaderParamVector4();
                 case ParamType.Matrix:
                     return new ShaderParamMatrix();
+                case ParamType.Matrix4x3:
+                    return new ShaderParamMatrix4x3();
+                case ParamType.Float:
+                    return new ShaderParamFloat();
                 default:
-                    throw new ArgumentOutOfRangeException("type");
+                    throw new ArgumentOutOfRangeException($"type: {type}");
             }
         }
     }

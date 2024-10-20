@@ -18,21 +18,23 @@
 
 \**********************************************************************/
 
+using System.Diagnostics;
 using System.IO;
 using RageLib.Common.Resources;
 using RageLib.Common.ResourceTypes;
+using UnityEngine;
 
 namespace RageLib.Models.Resource.Shaders
 {
     internal class ShaderParamTexture : DATBase, IShaderParam
     {
         private uint Unknown1 { get; set; }
-        private ushort Unknown2 { get; set; }
-        private ushort Unknown3 { get; set; }
+        private uint Unknown2 { get; set; }
+        private uint Unknown3 { get; set; }
         private uint Unknown4 { get; set; }
-        private uint Unknown5 { get; set; }
         private uint TextureNameOffset { get; set; }
-        private uint Unknown7 { get; set; }
+        private uint Unknown5 { get; set; }
+        private uint Padding { get; set; }
 
         public string TextureName { get; private set; }
 
@@ -41,17 +43,28 @@ namespace RageLib.Models.Resource.Shaders
         public new void Read(BinaryReader br)
         {
             base.Read(br);
-            
+
             Unknown1 = br.ReadUInt32();
-            Unknown2 = br.ReadUInt16();
-            Unknown3 = br.ReadUInt16();
+            Unknown2 = br.ReadUInt32();
+            Unknown3 = br.ReadUInt32();
             Unknown4 = br.ReadUInt32();
-            Unknown5 = br.ReadUInt32();
             TextureNameOffset = ResourceUtil.ReadOffset(br);
-            Unknown7 = br.ReadUInt32();
+            Unknown5 = br.ReadUInt32();
+            Padding = br.ReadUInt32();
 
             br.BaseStream.Seek(TextureNameOffset, SeekOrigin.Begin);
-            TextureName = ResourceUtil.ReadNullTerminatedString(br);
+
+            long remainingBytes = (br.BaseStream.Length - br.BaseStream.Position);
+
+            try
+            {
+                TextureName = ResourceUtil.ReadNullTerminatedString(br);
+
+            }
+            catch
+            {
+                UnityEngine.Debug.LogError($"Error on reading null terminated string, remaining bytes: {remainingBytes}, name offset: {TextureNameOffset}, length: {br.BaseStream.Length}");
+            }
         }
 
         public new void Write(BinaryWriter bw)

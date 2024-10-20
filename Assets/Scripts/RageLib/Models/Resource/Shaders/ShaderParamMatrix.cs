@@ -41,4 +41,23 @@ namespace RageLib.Models.Resource.Shaders
 
         #endregion
     }
+
+    internal class ShaderParamMatrix4x3 : IShaderParam
+    {
+        public Matrix43 Data { get; private set; }
+
+        #region Overrides of MaterialInfoDataObject
+
+        public void Read(BinaryReader br)
+        {
+            Data = new Matrix43(br);
+        }
+
+        public void Write(BinaryWriter bw)
+        {
+
+        }
+
+        #endregion
+    }
 }

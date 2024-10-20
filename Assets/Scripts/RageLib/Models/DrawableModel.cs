@@ -1,5 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
 
 public class Model3DGroup : GeometryModel3D
@@ -14,16 +17,26 @@ public class MeshGeometry3D
     public List<Vector2> textureCoordinates = new List<Vector2>();
     public List<int> triangleIndices = new List<int>();
 
+    // Jobs Mesh Parallel Generation 
     public Mesh GetUnityMesh()
     {
         var mesh = new Mesh();
-        mesh.vertices = positions.ToArray();
-        mesh.normals = normals.ToArray();
-        mesh.uv = textureCoordinates.ToArray();
+
+        NativeArray<Vector3> nativePositions = new NativeArray<Vector3>(positions.ToArray(), Allocator.TempJob);
+        NativeArray<Vector3> nativeNormals = new NativeArray<Vector3>(normals.ToArray(), Allocator.TempJob);
+        NativeArray<Vector2> nativeUVs = new NativeArray<Vector2>(textureCoordinates.ToArray(), Allocator.TempJob);
+
+        mesh.SetVertices(nativePositions);
+        mesh.SetNormals(nativeNormals);
+        mesh.SetUVs(0, nativeUVs);
         mesh.triangles = triangleIndices.ToArray();
-        mesh.RecalculateNormals();
         mesh.RecalculateBounds();
-        mesh.UploadMeshData(false);
+        mesh.UploadMeshData(true);
+
+        nativePositions.Dispose();
+        nativeNormals.Dispose();
+        nativeUVs.Dispose();
+
         return mesh;
     }
 }
@@ -56,7 +69,6 @@ public class RageMaterial
 }
 
 [System.Serializable]
-
 public class RageUnityTexture
 {
     public RageUnityTexture(int width, int height, TextureFormat format, bool mipChain)
@@ -72,17 +84,21 @@ public class RageUnityTexture
     public int height;
     public TextureFormat format;
     public bool mipChain;
-    public Color32[] pixels;
+    public byte[] pixels;
 
     public Texture2D GetUnityTexture()
     {
         Texture2D texture = new Texture2D(width, height, format, mipChain);
         texture.name = name;
-        if (pixels != null)
+
+        if (pixels != null && pixels.Length > 0)
         {
-            texture.SetPixels32(pixels);
+            texture.LoadRawTextureData(pixels);
+
         }
-        texture.Apply(false, true);
+
+        texture.Apply(false, false);
+
         return texture;
     }
 }

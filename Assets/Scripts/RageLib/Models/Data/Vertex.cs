@@ -1,8 +1,30 @@
 using System.IO;
 using RageLib.Common.ResourceTypes;
+using Unity.Collections;
 
 namespace RageLib.Models.Data
 {
+
+    public struct CleanVertex
+    {
+        public UnityEngine.Vector3 Position;
+        public UnityEngine.Vector3 Normal;
+        public UnityEngine.Vector2 TextureCoordinates;
+
+        // Conversão implícita de Vertex para CleanVertex
+        public static implicit operator CleanVertex(Vertex vertex)
+        {
+            CleanVertex cleanVert = new CleanVertex
+            {
+                Position = new UnityEngine.Vector3(vertex.Position.X, vertex.Position.Y, vertex.Position.Z),
+                Normal = new UnityEngine.Vector3(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z),
+                TextureCoordinates = new UnityEngine.Vector2(vertex.TextureCoordinates[0].X, vertex.TextureCoordinates[0].Y) // Pega a primeira coordenada de textura
+            };
+
+            return cleanVert;
+        }
+    }
+
     public struct Vertex
     {
         public Vector3 Position { get; private set; }

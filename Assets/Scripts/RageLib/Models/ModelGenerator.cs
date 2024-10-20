@@ -1,78 +1,63 @@
-﻿/**********************************************************************\
-
- RageLib
- Copyright (C) 2008  Arushan/Aru <oneforaru at gmail.com>
-
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
-
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-\**********************************************************************/
-
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using RageLib.Models.Data;
 using RageLib.Models.Resource;
 using RageLib.Models.Resource.Shaders;
 using RageLib.Textures;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace RageLib.Models
 {
     internal static class ModelGenerator
     {
+        private static readonly Dictionary<string, RageUnityTexture> textureCache = new Dictionary<string, RageUnityTexture>();
+
         private static Textures.Texture FindTexture(TextureFile textures, string name)
         {
             if (textures == null)
             {
                 return null;
             }
-
-            var textureObj = textures.FindTextureByName(name);
-            return textureObj;
+            return textures.FindTextureByName(name);
         }
 
-        /*
-        internal static Image CreateUVMapImage(DrawableModel drawable)
+        private static RageUnityTexture GetTexture(string textureName, TextureFile attachedTexture, TextureFile[] externalTextures)
         {
-            var bmp = new Bitmap(512, 512);
-            var g = Graphics.FromImage(bmp);
-            var pen = new System.Drawing.Pen(Color.Red);
-
-            foreach (var geometryInfo in drawable.ModelCollection)
+            if (string.IsNullOrEmpty(textureName))
             {
-                foreach (var dataInfo in geometryInfo.Geometries)
+                return null;
+            }
+
+            if (textureCache.ContainsKey(textureName))
+                return textureCache[textureName];
+
+            var textureObj = FindTexture(attachedTexture, textureName);
+            if (textureObj == null && externalTextures != null)
+            {
+                foreach (var file in externalTextures)
                 {
-                    for (var i = 0; i < dataInfo.FaceCount; i++)
+                    textureObj = FindTexture(file, textureName);
+                    if (textureObj != null)
                     {
-                        var i1 = (dataInfo.IndexBuffer.IndexData[i * 3 + 0]);
-                        var i2 = (dataInfo.IndexBuffer.IndexData[i * 3 + 1]);
-                        var i3 = (dataInfo.IndexBuffer.IndexData[i * 3 + 2]);
-
-                        var v1 = dataInfo.VertexBuffer.VertexData[i1];
-                        var v2 = dataInfo.VertexBuffer.VertexData[i2];
-                        var v3 = dataInfo.VertexBuffer.VertexData[i3];
-
-                        g.DrawLine(pen, v1.TextureU * bmp.Width, v1.TextureV * bmp.Height, v2.TextureU * bmp.Width, v2.TextureV * bmp.Height);
-                        g.DrawLine(pen, v1.TextureU * bmp.Width, v1.TextureV * bmp.Height, v3.TextureU * bmp.Width, v3.TextureV * bmp.Height);
-                        g.DrawLine(pen, v2.TextureU * bmp.Width, v2.TextureV * bmp.Height, v3.TextureU * bmp.Width, v3.TextureV * bmp.Height);
+                        break;
                     }
                 }
             }
 
-            g.Dispose();
+            if (textureObj != null)
+            {
+                var decodedTexture = textureObj.Decode() as RageUnityTexture;
+                textureCache[textureName] = decodedTexture;
+                return decodedTexture;
+            }
 
-            return bmp;
+            return null;
         }
-         */
 
         internal static ModelNode GenerateModel(FragTypeModel fragTypeModel, TextureFile[] textures)
         {
@@ -119,57 +104,46 @@ namespace RageLib.Models
 
         internal static ModelNode GenerateModel(Drawable drawable, TextureFile[] textures)
         {
-            var random = new System.Random();
-
             var materials = new RageMaterial[drawable.Materials.Count];
+            //Debug.Log($"Material Count: {materials.Length}");
 
-            string texName = null;
-            RageUnityTexture mainTex = new RageUnityTexture(1, 1, TextureFormat.ARGB32, false);
-
-            Debug.Log($"Material Count: {materials.Length}");
             for (int i = 0; i < materials.Length; i++)
             {
                 var drawableMat = drawable.Materials[i];
+                string texName = null;
+                RageUnityTexture mainTex = new RageUnityTexture(1, 1, TextureFormat.ARGB32, false);
 
                 if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.Texture))
                 {
                     var texture = drawableMat.Parameters[(int)ParamNameHash.Texture] as MaterialParamTexture;
-
                     if (texture != null)
                     {
-                        // 1. Try looking in the embedded texture file (if any)
-                        var textureObj = FindTexture(drawable.AttachedTexture, texture.TextureName);
-
-                        // 2. Try looking in any attached external texture dictionaries
-                        if (textureObj == null)
-                        {
-                            if (textures != null)
-                            {
-                                foreach (var file in textures)
-                                {
-                                    textureObj = FindTexture(file, texture.TextureName);
-                                    if (textureObj != null)
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Generate a brush if we were successful
-                        if (textureObj != null)
-                        {
-                            mainTex = textureObj.Decode() as RageUnityTexture;
-                        }
-                    }
-
-                    if (texture != null)
-                    {
+                        mainTex = GetTexture(texture.TextureName, drawable.AttachedTexture, textures);
                         texName = texture.TextureName;
                     }
                     else
                     {
                         texName = "";
+                    }
+                }
+                else
+                {
+                    if (drawableMat.Parameters.Count > 0)
+                    {
+                        var data = drawableMat.Parameters.Values.ToArray();
+                        var texture = data[0] as MaterialParamTexture;
+                        
+                        if (texture != null)
+                        {
+                            Debug.Log($"Found workaround tex {texture.TextureName}");
+                            mainTex = GetTexture(texture.TextureName, drawable.AttachedTexture, textures);
+                            texName = texture.TextureName;
+                        }
+                        else
+                        {
+                            texName = "";
+                        }
+
                     }
                 }
 
@@ -179,64 +153,126 @@ namespace RageLib.Models
 
             var drawableModelGroup = new Model3DGroup();
             var drawableModelNode = new ModelNode { DataModel = drawable, Model3D = drawableModelGroup, Name = "Drawable", NoCount = true };
+
             foreach (var model in drawable.Models)
             {
                 var modelGroup = new Model3DGroup();
-
                 var modelNode = new ModelNode { DataModel = model, Model3D = modelGroup, Name = "Model" };
                 drawableModelNode.Children.Add(modelNode);
-
                 foreach (var geometry in model.Geometries)
                 {
-                    var geometryIndex = 0;
                     var geometryGroup = new Model3DGroup();
-
                     var geometryNode = new ModelNode { DataModel = geometry, Model3D = geometryGroup, Name = "Geometry" };
                     modelNode.Children.Add(geometryNode);
-
-                    foreach (var mesh in geometry.Meshes)
+                    
+                    for (int meshIndex = 0; meshIndex < geometry.Meshes.Count; meshIndex++)
                     {
+                        var mesh = geometry.Meshes[meshIndex];
                         var mesh3D = new MeshGeometry3D();
 
                         var meshNode = new ModelNode { DataModel = mesh, Model3D = null, Name = "Mesh" };
                         geometryNode.Children.Add(meshNode);
 
-                        Data.Vertex[] vertices = mesh.DecodeVertexData();
-                        foreach (var vertex in vertices)
+                        var jobsVertexData = new NativeArray<CleanVertex>(mesh.DecodeUnityBurstVertexData(), Allocator.TempJob);
+
+                        var decodeJob = new MeshDecodeJob
                         {
-                            mesh3D.positions.Add(new Vector3(vertex.Position.X, vertex.Position.Y, vertex.Position.Z));
-                            if (mesh.VertexHasNormal)
-                            {
-                                mesh3D.normals.Add(new Vector3(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z));
-                            }
+                            Positions = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
+                            Normals = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
+                            TextureCoordinates = new NativeArray<Vector2>(jobsVertexData.Length, Allocator.TempJob),
+                            Vertices = jobsVertexData,
+                            HasNormals = mesh.VertexHasNormal,
+                            HasTextureCoordinates = mesh.VertexHasTexture
+                        };
 
-                            if (mesh.VertexHasTexture)
-                            {
-                                mesh3D.textureCoordinates.Add(new Vector2(vertex.TextureCoordinates[0].X, vertex.TextureCoordinates[0].Y));
-                            }
-                        }
-
-                        ushort[] indices = mesh.DecodeIndexData();
-                        for (int i = 0; i < mesh.FaceCount; i++)
+                        var decodeIndexJob = new MeshDecodeIndexJob
                         {
-                            mesh3D.triangleIndices.Add(indices[i * 3 + 0]);
-                            mesh3D.triangleIndices.Add(indices[i * 3 + 1]);
-                            mesh3D.triangleIndices.Add(indices[i * 3 + 2]);
-                        }
+                            Indices = new NativeArray<ushort>(mesh.DecodeIndexData(), Allocator.TempJob),
+                            TriangleIndices = new NativeList<int>(Allocator.TempJob),
+                            FaceCount = mesh.FaceCount
+                        };
 
-                        var material = materials[geometry.Meshes[geometryIndex].MaterialIndex];
+                        var handle = decodeJob.Schedule();
+                        var indexHandle = decodeIndexJob.Schedule(handle);
+                        indexHandle.Complete();
+
+                        mesh3D.positions.AddRange(decodeJob.Positions.ToArray());
+                        if (mesh.VertexHasNormal)
+                        {
+                            mesh3D.normals.AddRange(decodeJob.Normals.ToArray());
+                        }
+                        if (mesh.VertexHasTexture)
+                        {
+                            mesh3D.textureCoordinates.AddRange(decodeJob.TextureCoordinates.ToArray());
+                        }
+                        mesh3D.triangleIndices.AddRange(decodeIndexJob.TriangleIndices.AsArray().ToArray());
+
+                        decodeJob.Vertices.Dispose();
+                        decodeJob.Positions.Dispose();
+                        decodeJob.Normals.Dispose();
+                        decodeJob.TextureCoordinates.Dispose();
+                        decodeIndexJob.Indices.Dispose();
+                        decodeIndexJob.TriangleIndices.Dispose();
+
+                        var material = materials[geometry.Meshes[meshIndex].MaterialIndex];
                         var model3D = new GeometryModel3D(mesh3D, material);
-
                         geometryGroup.Children.Add(model3D);
                         meshNode.Model3D = model3D;
-
-                        geometryIndex++;
                     }
+
                     modelGroup.Children.Add(geometryGroup);
                 }
+
                 drawableModelGroup.Children.Add(modelGroup);
             }
+
             return drawableModelNode;
         }
+
+        [BurstCompile]
+        private struct MeshDecodeJob : IJob
+        {
+            [ReadOnly] public NativeArray<CleanVertex> Vertices;
+            public NativeArray<Vector3> Positions;
+            public NativeArray<Vector3> Normals;
+            public NativeArray<Vector2> TextureCoordinates;
+            public bool HasNormals;
+            public bool HasTextureCoordinates;
+
+            public void Execute()
+            {
+                for (int i = 0; i < Vertices.Length; i++)
+                {
+                    Positions[i] = Vertices[i].Position;
+                    if (HasNormals)
+                    {
+                        Normals[i] = Vertices[i].Normal;
+                    }
+                    if (HasTextureCoordinates)
+                    {
+                        TextureCoordinates[i] = Vertices[i].TextureCoordinates;
+                    }
+                }
+            }
+        }
+
+        [BurstCompile]
+        private struct MeshDecodeIndexJob : IJob
+        {
+            [ReadOnly] public NativeArray<ushort> Indices;
+            public NativeList<int> TriangleIndices;
+            public int FaceCount;
+
+            public void Execute()
+            {
+                for (int i = 0; i < FaceCount; i++)
+                {
+                    TriangleIndices.Add(Indices[i * 3 + 0]);
+                    TriangleIndices.Add(Indices[i * 3 + 1]);
+                    TriangleIndices.Add(Indices[i * 3 + 2]);
+                }
+            }
+        }
+
     }
 }

@@ -25,5 +25,7 @@ namespace RageLib.Models.Resource.Shaders
         Texture = 0,
         Vector4 = 1,
         Matrix = 4,
+        Matrix4x3 = 8,
+        Float = 16,
     }
 }
