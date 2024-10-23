@@ -399,6 +399,15 @@ public class Ipl_INST : IPL_Item
     public int hash = 0;
     public int interior;
     public Vector3 position = new Vector3(0.0f, 0.0f, 0.0f);
+    public Vector3 unityPosition
+    {
+        get
+        {
+            Quaternion rotation = Quaternion.Euler(-90, 0, 0);
+            Vector3 newPosition = rotation * position;
+            return newPosition;
+        }
+    }
     public Vector3 scale = new Vector3(0.0f, 0.0f, 0.0f);
     public Vector4 rotation = new Vector4(0.0f, 0.0f, 0.0f, 1.0f);
 

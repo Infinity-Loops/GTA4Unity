@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using RageLib.FileSystem;
 using RageLib.FileSystem.Common;
 using RageLib.Models;
@@ -5,7 +6,9 @@ using RageLib.Textures;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Unity.Collections;
 using UnityEngine;
@@ -15,33 +18,37 @@ using File = RageLib.FileSystem.Common.File;
 
 public class WorldComposerMachine : MonoBehaviour
 {
+    public static WorldComposerMachine Instance;
+
     [Header("Settings")]
     //Reimplementation
     public GameObject staticGeometryPrefab;
+    //The total size of the map is 6,000 m, so this needs to be calculated by two numbers that will result in 6,000, such as 500 * 12 = 6,000 or 1,000 * 6 = 6,000 and so on
+    public float cellSize = 500f;
+    public int numCells = 12;
+    public Vector3 minimumLoadRange;
+    public List<Cell> cells = new List<Cell>();
     private int staticGeometryInstanceID;
     private GameObject worldContainer;
-    private int loadedObjects;
+    internal int loadedObjects;
     //Rage
     private List<Ipl_INST> sceneInstances = new List<Ipl_INST>();
     private List<Item_OBJS> gameObjects = new List<Item_OBJS>();
     private Dictionary<string, Item_OBJS> gameObjectDict = new Dictionary<string, Item_OBJS>();
-    private Dictionary<string, ModelNode> modelCache = new Dictionary<string, ModelNode>();
     //Unity
-    private Dictionary<string, Mesh> meshCache = new Dictionary<string, Mesh>();
-    private Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
-    private Dictionary<string, Texture2D> textureCache = new Dictionary<string, Texture2D>();
-    private NativeArray<int> staticGeometriesInstances;
-    private NativeArray<int> staticGeometriesTransformInstances;
+    private bool compositionFinished;
+    private GTADatLoader loader;
 
     public async void ComposeWorld(GTADatLoader loader)
     {
+        this.loader = loader;
+
         GenerateContainer();
 
         ComposeWater(loader.waterPlanes, loader.root);
 
         LoadSceneInstances(loader);
 
-        //ComposeMap(loader);
         await ComposeMapAccurate(loader);
     }
 
@@ -51,6 +58,30 @@ public class WorldComposerMachine : MonoBehaviour
         worldContainer.transform.parent = transform;
         worldContainer.transform.localPosition = Vector3.zero;
         worldContainer.transform.localRotation = Quaternion.Euler(0, 0, 0);
+    }
+
+    public void CreateCellsAndDistributeObjects()
+    {
+        for (int x = 0; x < numCells; x++)
+        {
+            for (int z = 0; z < numCells; z++)
+            {
+
+                Vector2Int cellPos = new Vector2Int(x, z);
+                Cell newCell = new Cell(cellPos);
+
+                foreach (var obj in sceneInstances)
+                {
+                    if (newCell.IsPositionInCell(obj.unityPosition, Vector3.zero, cellSize))
+                    {
+                        newCell.objectsInCell.Add(obj);
+                        newCell.loadedObjects++;
+                    }
+                }
+
+                cells.Add(newCell);
+            }
+        }
     }
 
     void LoadSceneInstances(GTADatLoader loader)
@@ -68,7 +99,9 @@ public class WorldComposerMachine : MonoBehaviour
             }
         }
 
-        AllocateGameObjects(staticGeometryInstanceID, sceneInstances.Count, ref staticGeometriesInstances, ref staticGeometriesTransformInstances);
+        CreateCellsAndDistributeObjects();
+
+        //AllocateGameObjects(staticGeometryInstanceID, sceneInstances.Count, ref staticGeometriesInstances, ref staticGeometriesTransformInstances, ref staticGeometriesComponents);
     }
 
     async Task ComposeMapAccurate(GTADatLoader loader)
@@ -125,46 +158,48 @@ public class WorldComposerMachine : MonoBehaviour
         LoadingScreen.Finish();
         GameCore.SetReady(loader);
 
-        Debug.Log("Loading Item Definitions");
+        //Debug.Log("Loading Item Definitions");
 
-        await ProcessItems(sceneInstances, loader);
+        //await ProcessItems(sceneInstances, loader);
 
         Debug.Log("Map composition finished.");
+        compositionFinished = true;
     }
 
-    async Task ProcessItems(List<Ipl_INST> sceneInstances, GTADatLoader loader)
+    public async Task ProcessItems(List<Ipl_INST> sceneInstances, GTADatLoader loader, NativeArray<int> staticGeometriesInstances, NativeArray<int> staticGeometriesTransformInstances, StaticGeometry[] staticGeometriesComponents)
     {
-        for (int i = 0; i < sceneInstances.Count; i++)
+        await Task.Run(() =>
         {
-            var itemInstance = sceneInstances[i];
-
-            if (gameObjectDict.TryGetValue(itemInstance.name, out var equivalentItemGameObject))
+            for (int i = 0; i < sceneInstances.Count; i++)
             {
-                File gameItem = null;
-                string modelName = "";
+                var itemInstance = sceneInstances[i];
 
-                if (!string.IsNullOrEmpty(equivalentItemGameObject.wdd) && !equivalentItemGameObject.wdd.Equals("null", StringComparison.OrdinalIgnoreCase))
+                if (gameObjectDict.TryGetValue(itemInstance.name, out var equivalentItemGameObject))
                 {
-                    modelName = equivalentItemGameObject.wdd + ".wdd";
-                    gameItem = FindGameFile(loader, modelName);
-                }
-                else
-                {
-                    modelName = equivalentItemGameObject.modelName + ".wdr";
-                    gameItem = FindGameFile(loader, modelName) ?? FindGameFile(loader, equivalentItemGameObject.modelName + ".wft");
-                }
+                    File gameItem = null;
+                    string modelName = "";
 
-                if (gameItem != null)
-                {
-                    ProcessGameItem(loader, gameItem, equivalentItemGameObject, itemInstance, staticGeometriesInstances[i], staticGeometriesTransformInstances[i]);
+                    if (!string.IsNullOrEmpty(equivalentItemGameObject.wdd) && !equivalentItemGameObject.wdd.Equals("null", StringComparison.OrdinalIgnoreCase))
+                    {
+                        modelName = equivalentItemGameObject.wdd + ".wdd";
+                        gameItem = FindGameFile(loader, modelName);
+                    }
+                    else
+                    {
+                        modelName = equivalentItemGameObject.modelName + ".wdr";
+                        gameItem = FindGameFile(loader, modelName) ?? FindGameFile(loader, equivalentItemGameObject.modelName + ".wft");
+                    }
+
+                    if (gameItem != null)
+                    {
+                        ProcessGameItem(loader, gameItem, equivalentItemGameObject, itemInstance, staticGeometriesInstances[i], staticGeometriesTransformInstances[i], staticGeometriesComponents[i]);
+                    }
                 }
             }
-
-            await Task.Yield();
-        }
+        });
     }
 
-    private void AllocateGameObjects(int targetInstanceID, int count, ref NativeArray<int> instanceIds, ref NativeArray<int> transformIds)
+    public void AllocateGameObjects(int targetInstanceID, int count, ref NativeArray<int> instanceIds, ref NativeArray<int> transformIds, ref StaticGeometry[] geometries)
     {
         instanceIds = new NativeArray<int>(count, Allocator.Persistent);
         transformIds = new NativeArray<int>(count, Allocator.Persistent);
@@ -175,25 +210,19 @@ public class WorldComposerMachine : MonoBehaviour
 
         Resources.InstanceIDToObjectList(transformIds, objects);
 
+        List<StaticGeometry> staticGeometries = new List<StaticGeometry>();
+
         foreach (Transform item in objects)
         {
             item.parent = worldContainer.transform;
+            staticGeometries.Add(item.GetComponent<StaticGeometry>());
         }
 
-        //Not necessary no improvements 
-
-        //objects.Clear();
-
-        //Resources.InstanceIDToObjectList(instanceIds, objects);
-
-        //foreach (GameObject item in objects)
-        //{
-        //    item.hideFlags = HideFlags.HideInHierarchy;
-        //}
+        geometries = staticGeometries.ToArray();
     }
 
 
-    private void ProcessGameItem(GTADatLoader loader, File gameItem, Item_OBJS equivalentItemGameObject, Ipl_INST itemInstance, int gameObject, int transform)
+    private void ProcessGameItem(GTADatLoader loader, File gameItem, Item_OBJS equivalentItemGameObject, Ipl_INST itemInstance, int gameObject, int transform, StaticGeometry geometry)
     {
         if (gameItem.Name.EndsWith(".wdr"))
         {
@@ -202,16 +231,15 @@ public class WorldComposerMachine : MonoBehaviour
             TextureFile[] textureCollection = new TextureFile[1];
             //Debug.Log($"Loading WDR: {gameItem.Name}");
 
-            using (MemoryStream modelStream = new MemoryStream(gameItem.GetData()))
+            string modelFileName = gameItem.Name;
+
+            try
             {
-                try
-                {
-                    model.Open(modelStream);
-                }
-                catch
-                {
-                    model = null;
-                }
+                model.Open(gameItem.GetData());
+            }
+            catch
+            {
+                model = null;
             }
 
             if (model == null)
@@ -224,25 +252,22 @@ public class WorldComposerMachine : MonoBehaviour
 
             if (textureData != null)
             {
-                using (MemoryStream textureStream = new MemoryStream(textureData.GetData()))
+                textureFile = new TextureFile();
+                //Debug.Log($"Opening Texture: {texName}");
+                textureFile.Open(textureData.GetData());
+                textureCollection[0] = textureFile;
+
+                MainThreadDispatcher.ExecuteOnMainThread(() =>
                 {
-                    try
-                    {
-                        textureFile = new TextureFile();
-                        //Debug.Log($"Opening Texture: {texName}");
-                        textureFile.Open(textureStream);
-                        textureCollection[0] = textureFile;
-                    }
-                    catch
-                    {
-                        textureCollection = null;
-                    }
-                }
-                LoadModel(model, textureCollection, itemInstance, gameItem, gameObject, transform);
+                    LoadModel(model, textureCollection, itemInstance, modelFileName, gameObject, transform, geometry);
+                });
             }
             else
             {
-                LoadModel(model, null, itemInstance, gameItem, gameObject, transform);
+                MainThreadDispatcher.ExecuteOnMainThread(() =>
+                {
+                    LoadModel(model, null, itemInstance, modelFileName, gameObject, transform, geometry);
+                });
             }
         }
         else if (gameItem.Name.EndsWith(".wdd"))
@@ -442,22 +467,12 @@ public class WorldComposerMachine : MonoBehaviour
     //}
     #endregion
 
-    void LoadModel(IModelFile model, TextureFile[] collection, Ipl_INST definitions, File modelFile, int gameObject, int transform)
+    void LoadModel(ModelFile model, TextureFile[] collection, Ipl_INST definitions, string modelFileName, int gameObject, int transform, StaticGeometry geometry)
     {
         if (Resources.InstanceIDIsValid(gameObject))
         {
-            ModelNode cachedModel = null;
-
-            if (!modelCache.TryGetValue(modelFile.Name, out cachedModel))
-            {
-                var modelNode = model.GetModel(collection);
-                cachedModel = modelNode;
-                modelCache[modelFile.Name] = cachedModel;
-                loadedObjects++;
-            }
-
             GameObject gameObjectInstance = (GameObject)Resources.InstanceIDToObject(gameObject);
-            gameObjectInstance.name = modelFile.Name;
+            gameObjectInstance.name = modelFileName;
 
             Quaternion rotation = Quaternion.Euler(-90, 0, 0);
             Vector3 newPosition = rotation * definitions.position;
@@ -465,110 +480,10 @@ public class WorldComposerMachine : MonoBehaviour
             gameObjectInstance.transform.position = newPosition;
             gameObjectInstance.transform.rotation = rotation * definitions.unityRotation;
 
-            LoadModelRecursive(gameObjectInstance, cachedModel, modelFile.Name);
-        }
-    }
-
-    void LoadModelRecursive(GameObject parent, ModelNode modelNode, string originalName)
-    {
-        if (modelNode.Children.Count > 0)
-        {
-            for (int i = 0; i < modelNode.Children.Count; i++)
-            {
-                var modelChildren = modelNode.Children[i];
-                GameObject children = new GameObject(modelChildren.Name);
-                children.transform.parent = parent.transform;
-                children.transform.localPosition = Vector3.zero;
-                children.transform.localRotation = Quaternion.identity;
-
-                if (modelChildren.Model3D.geometry != null)
-                {
-                    var filterChildren = children.AddComponent<MeshFilter>();
-                    var rendererChildren = children.AddComponent<MeshRenderer>();
-
-                    if (meshCache.TryGetValue($"{originalName}_{i}", out var mesh))
-                    {
-                        filterChildren.sharedMesh = mesh;
-                        var rageMaterial = modelChildren.Model3D.material;
-                        if (rageMaterial != null)
-                        {
-                            if (materialCache.TryGetValue($"{rageMaterial.shaderName}@{rageMaterial.textureName}", out var cachedMaterial))
-                            {
-                                rendererChildren.sharedMaterial = cachedMaterial;
-                            }
-                            else
-                            {
-                                var unityMaterial = new Material(Shader.Find("gta_default"));
-                                unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
-                                unityMaterial.enableInstancing = true;
-
-                                if (!string.IsNullOrEmpty(rageMaterial.textureName))
-                                {
-                                    if (textureCache.TryGetValue(rageMaterial.textureName, out var cachedTex))
-                                    {
-                                        unityMaterial.SetTexture("_MainTex", cachedTex);
-                                    }
-                                    else 
-                                    {
-                                        if(rageMaterial.mainTex != null)
-                                        {
-                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                            unityMaterial.SetTexture("_MainTex", tex2d);
-                                            textureCache.Add(rageMaterial.textureName, tex2d);
-                                        }
-                                    }
-                                }
-
-
-                                rendererChildren.sharedMaterial = unityMaterial;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        filterChildren.sharedMesh = modelChildren.Model3D.geometry.GetUnityMesh();
-                        var rageMaterial = modelChildren.Model3D.material;
-                        if (rageMaterial != null)
-                        {
-                            if (materialCache.TryGetValue($"{rageMaterial.shaderName}@{rageMaterial.textureName}", out var cachedMaterial))
-                            {
-                                rendererChildren.sharedMaterial = cachedMaterial;
-                            }
-                            else
-                            {
-                                var unityMaterial = new Material(Shader.Find("gta_default"));
-                                unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
-                                unityMaterial.enableInstancing = true;
-
-                                if (!string.IsNullOrEmpty(rageMaterial.textureName))
-                                {
-                                    if (textureCache.TryGetValue(rageMaterial.textureName, out Texture2D cachedTex))
-                                    {
-                                        unityMaterial.SetTexture("_MainTex", cachedTex);
-                                    }
-                                    else
-                                    {
-                                        if (!string.IsNullOrEmpty(rageMaterial.textureName) && rageMaterial.mainTex != null)
-                                        {
-                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                            unityMaterial.SetTexture("_MainTex", tex2d);
-                                            textureCache.Add(rageMaterial.textureName, tex2d);
-                                        }
-                                    }
-                                }
-
-                                rendererChildren.sharedMaterial = unityMaterial;
-                            }
-                        }
-
-                        meshCache.Add($"{originalName}_{i}", filterChildren.sharedMesh);
-                    }
-
-                    children.AddComponent<MeshCollider>();
-                }
-
-                LoadModelRecursive(children, modelChildren, originalName);
-            }
+            geometry.data.model = model;
+            geometry.data.collection = collection;
+            geometry.data.modelFileName = modelFileName;
+            geometry.data.definitions = definitions;
         }
     }
 
@@ -655,12 +570,43 @@ public class WorldComposerMachine : MonoBehaviour
 
     private void Awake()
     {
+        Instance = this;
         staticGeometryInstanceID = staticGeometryPrefab.GetInstanceID();
     }
 
-    void OnDestroy()
+    private void Start()
     {
-        staticGeometriesInstances.Dispose();
-        staticGeometriesTransformInstances.Dispose();
+        FocusPoint.SetTarget(Camera.main.transform);
     }
+
+    private void Update()
+    {
+        if (compositionFinished)
+        {
+            foreach (var cell in cells)
+            {
+                if (cell.IsPositionInCell(FocusPoint.GetPosition(), minimumLoadRange, cellSize))
+                {
+                    Debug.Log($"It's on cell: {cell.cellPosition}");
+                    cell.LoadCellItems(this, loader, staticGeometryInstanceID);
+                }
+                else
+                {
+                    cell.UnloadCellItems();
+                }
+            }
+        }
+    }
+
+    private void OnDrawGizmos()
+    {
+        if (compositionFinished)
+        {
+            foreach (var cell in cells)
+            {
+                cell.DrawCellBounds(cellSize, Color.blue);
+            }
+        }
+    }
+
 }

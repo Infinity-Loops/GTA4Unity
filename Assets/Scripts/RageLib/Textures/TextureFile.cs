@@ -24,7 +24,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using RageLib.Textures.Resource;
-using File=RageLib.Textures.Resource.File;
+using File = RageLib.Textures.Resource.File;
 
 namespace RageLib.Textures
 {
@@ -32,6 +32,7 @@ namespace RageLib.Textures
     {
         private File _file;
         public List<Texture> Textures { get; private set; }
+        private byte[] _data;
 
         public int Count
         {
@@ -50,6 +51,21 @@ namespace RageLib.Textures
             _file = new File();
             _file.Open(stream);
             BuildTextures();
+        }
+
+        public void Open(byte[] data)
+        {
+            _file = new File();
+            _data = data;
+        }
+
+        public void Read()
+        {
+            using (MemoryStream stream = new MemoryStream(_data))
+            {
+                _file.Open(stream);
+                BuildTextures();
+            }
         }
 
         public void Open(Stream systemMemory, Stream graphicsMemory)
@@ -90,7 +106,7 @@ namespace RageLib.Textures
         private void BuildTextures()
         {
             Textures = new List<Texture>(_file.Header.TextureCount);
-            
+
             foreach (TextureInfo info in _file.Textures)
             {
                 Textures.Add(new Texture(info));

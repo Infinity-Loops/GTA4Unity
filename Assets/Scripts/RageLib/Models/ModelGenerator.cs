@@ -28,35 +28,38 @@ namespace RageLib.Models
 
         private static RageUnityTexture GetTexture(string textureName, TextureFile attachedTexture, TextureFile[] externalTextures)
         {
-            if (string.IsNullOrEmpty(textureName))
+            lock (textureCache)
             {
-                return null;
-            }
-
-            if (textureCache.ContainsKey(textureName))
-                return textureCache[textureName];
-
-            var textureObj = FindTexture(attachedTexture, textureName);
-            if (textureObj == null && externalTextures != null)
-            {
-                foreach (var file in externalTextures)
+                if (string.IsNullOrEmpty(textureName))
                 {
-                    textureObj = FindTexture(file, textureName);
-                    if (textureObj != null)
+                    return null;
+                }
+
+                if (textureCache.ContainsKey(textureName))
+                    return textureCache[textureName];
+
+                var textureObj = FindTexture(attachedTexture, textureName);
+                if (textureObj == null && externalTextures != null)
+                {
+                    foreach (var file in externalTextures)
                     {
-                        break;
+                        textureObj = FindTexture(file, textureName);
+                        if (textureObj != null)
+                        {
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (textureObj != null)
-            {
-                var decodedTexture = textureObj.Decode() as RageUnityTexture;
-                textureCache[textureName] = decodedTexture;
-                return decodedTexture;
-            }
+                if (textureObj != null)
+                {
+                    var decodedTexture = textureObj.Decode() as RageUnityTexture;
+                    textureCache[textureName] = decodedTexture;
+                    return decodedTexture;
+                }
 
-            return null;
+                return null;
+            }
         }
 
         internal static ModelNode GenerateModel(FragTypeModel fragTypeModel, TextureFile[] textures)
@@ -132,7 +135,7 @@ namespace RageLib.Models
                     {
                         var data = drawableMat.Parameters.Values.ToArray();
                         var texture = data[0] as MaterialParamTexture;
-                        
+
                         if (texture != null)
                         {
                             Debug.Log($"Found workaround tex {texture.TextureName}");
@@ -164,7 +167,7 @@ namespace RageLib.Models
                     var geometryGroup = new Model3DGroup();
                     var geometryNode = new ModelNode { DataModel = geometry, Model3D = geometryGroup, Name = "Geometry" };
                     modelNode.Children.Add(geometryNode);
-                    
+
                     for (int meshIndex = 0; meshIndex < geometry.Meshes.Count; meshIndex++)
                     {
                         var mesh = geometry.Meshes[meshIndex];

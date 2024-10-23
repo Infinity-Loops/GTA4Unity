@@ -120,7 +120,7 @@ namespace RageLib.Models.Resource.Shaders
                     }
                     catch (System.Exception ex)
                     {
-                        UnityEngine.Debug.LogException(ex);
+                        //UnityEngine.Debug.LogException(ex);
                         ShaderParams.Add((ParamNameHash) ShaderParamNames[i], null);
                     }
                 }

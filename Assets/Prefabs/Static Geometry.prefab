@@ -9,7 +9,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1956263540485245529}
-  m_Layer: 0
+  - component: {fileID: 4374851733885556088}
+  m_Layer: 3
   m_Name: Static Geometry
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -31,3 +32,15 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4374851733885556088
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7699369638236078151}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9cf2c1c2fceac3f429cca1cb4d4ff5d1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

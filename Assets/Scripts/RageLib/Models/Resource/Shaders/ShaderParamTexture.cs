@@ -63,7 +63,7 @@ namespace RageLib.Models.Resource.Shaders
             }
             catch
             {
-                UnityEngine.Debug.LogError($"Error on reading null terminated string, remaining bytes: {remainingBytes}, name offset: {TextureNameOffset}, length: {br.BaseStream.Length}");
+                //UnityEngine.Debug.LogError($"Error on reading null terminated string, remaining bytes: {remainingBytes}, name offset: {TextureNameOffset}, length: {br.BaseStream.Length}");
             }
         }
 

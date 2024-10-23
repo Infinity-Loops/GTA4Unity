@@ -18,16 +18,19 @@
 
 \**********************************************************************/
 
+using System;
 using System.IO;
 using RageLib.Models.Data;
 using RageLib.Models.Resource;
 using RageLib.Textures;
+using UnityEngine;
 
 namespace RageLib.Models
 {
     public class ModelFile : IModelFile
     {
         internal File<DrawableModel> File { get; private set; }
+        byte[] _data;
 
         public void Open(string filename)
         {
@@ -39,6 +42,20 @@ namespace RageLib.Models
         {
             File = new File<DrawableModel>();
             File.Open(stream);
+        }
+
+        public void Open(byte[] data)
+        {
+            File = new File<DrawableModel>();
+            _data = data;
+        }
+
+        public void Read()
+        {
+            using (var stream = new MemoryStream(_data))
+            {
+                File.Open(stream);
+            }
         }
 
         public TextureFile EmbeddedTextureFile
