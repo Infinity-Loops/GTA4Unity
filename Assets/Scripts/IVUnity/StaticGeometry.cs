@@ -51,11 +51,24 @@ public class StaticGeometry : MonoBehaviour
                              data.collection = null;
                          }
 
-                         data.model.Read();
-                         var modelNode = data.model.GetModel(data.collection);
-                         cachedModel = modelNode;
-                         modelCache[data.modelFileName] = cachedModel;
-                         WorldComposerMachine.Instance.loadedObjects++;
+                         try
+                         {
+
+                             data.model.Read();
+                         }
+                         catch
+                         {
+                             data.model = null;
+                         }
+
+
+                         if(data.model != null)
+                         {
+                             var modelNode = data.model.GetModel(data.collection);
+                             cachedModel = modelNode;
+                             modelCache[data.modelFileName] = cachedModel;
+                             WorldComposerMachine.Instance.loadedObjects++;
+                         }
                      }
                  }
 
