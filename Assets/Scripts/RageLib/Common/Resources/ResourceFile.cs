@@ -81,11 +81,24 @@ namespace RageLib.Common.Resources
         {
             _header = new ResourceHeader();
 
+            var startPosition = data.Position;
             var br = new BinaryReader(data);
             _header.Read(br);
-            if (_header.Magic != ResourceHeader.MagicValue)
+            
+            // Check if it's a valid RSC file
+            if (!_header.IsValidRSC())
             {
-                throw new Exception("Not a valid resource");
+                // Provide more detailed error information
+                byte version = _header.GetVersion();
+                string magicStr = System.Text.Encoding.ASCII.GetString(BitConverter.GetBytes(_header.Magic));
+                throw new Exception($"Not a valid RSC resource. Magic: 0x{_header.Magic:X8} ('{magicStr}'), Version: {version}. Expected 'RSC' signature with any version.");
+            }
+            
+            // Log RSC version for debugging
+            byte rscVersion = _header.GetVersion();
+            if (rscVersion != 0x05)
+            {
+                UnityEngine.Debug.Log($"Loading RSC file with version {rscVersion} (Type: {_header.Type})");
             }
 
             switch (_header.CompressCodec)

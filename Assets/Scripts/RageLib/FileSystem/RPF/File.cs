@@ -26,6 +26,7 @@ namespace RageLib.FileSystem.RPF
     internal class File
     {
         private Stream _stream;
+        private readonly object _readLock = new object();
 
         public File()
         {
@@ -142,10 +143,13 @@ namespace RageLib.FileSystem.RPF
 
         public byte[] ReadData(int offset, int length)
         {
-            var buffer = new byte[length];
-            _stream.Seek(offset, SeekOrigin.Begin);
-            _stream.Read(buffer, 0, length);
-            return buffer;
+            lock (_readLock)
+            {
+                var buffer = new byte[length];
+                _stream.Seek(offset, SeekOrigin.Begin);
+                _stream.Read(buffer, 0, length);
+                return buffer;
+            }
         }
 
     }

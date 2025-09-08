@@ -3,13 +3,16 @@ using RageLib.FileSystem;
 using RageLib.FileSystem.Common;
 using System.Threading.Tasks;
 using UnityEngine;
+using IVUnity;
 
 public class Loader : MonoBehaviour
 {
     public static Loader Instance;
     public string gameDir;
     public LoadingScreen loadingScreen;
-    public WorldComposerMachine composer;
+    public HighPerformanceLoader hpLoader;
+    public Transform playerTransform; // Reference to player
+    
 
     //GTA IV
     private byte[] key;
@@ -45,8 +48,25 @@ public class Loader : MonoBehaviour
 
         SetupLoadingScreenImages();
 
-        await gameLoader.LoadGameFiles(() => { MainThreadDispatcher.ExecuteOnMainThread(() => { composer.ComposeWorld(gameLoader); }); });
+        await gameLoader.LoadGameFiles(() => 
+        { 
+            MainThreadDispatcher.ExecuteOnMainThread(() => 
+            { 
+                InitializeHighPerformanceLoader();
+            }); 
+        });
 
+    }
+    
+    private void InitializeHighPerformanceLoader()
+    {
+        if (playerTransform == null)
+        {
+            Debug.Log("No player transform assigned. Will use FocusPoint for loading.");
+        }
+        
+        hpLoader.Initialize(gameLoader, playerTransform);
+        Debug.Log("High-Performance Loader initialized successfully");
     }
 
     private void SetupLoadingScreenImages()

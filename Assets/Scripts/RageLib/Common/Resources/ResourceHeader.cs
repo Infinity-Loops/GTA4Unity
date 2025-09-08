@@ -31,6 +31,19 @@ namespace RageLib.Common.Resources
         public ResourceType Type { get; set; }
         public uint Flags { get; set; }
         public CompressionType CompressCodec { get; set; }
+        
+        public byte GetVersion()
+        {
+            // Version is in the highest byte (e.g., 0x05 in 0x05435352)
+            return (byte)(Magic >> 24);
+        }
+        
+        public bool IsValidRSC()
+        {
+            // Check if the last 3 bytes are "RSC" (0x435352)
+            // This allows any version in the first byte
+            return (Magic & 0x00FFFFFF) == 0x00435352;
+        }
 
         public int GetSystemMemSize()
         {
@@ -85,8 +98,12 @@ namespace RageLib.Common.Resources
             Flags = br.ReadUInt32();
             CompressCodec = (CompressionType)br.ReadUInt16();
 
-            if (Magic == MagicBigEndian)
+            // Check if we need to swap endianness
+            // In big-endian, "RSC" would be at the beginning: 0x525343XX
+            // In little-endian, "RSC" is at the end: 0xXX435352
+            if ((Magic & 0xFFFFFF00) == 0x52534300)
             {
+                // Big-endian detected, swap everything
                 Magic = DataUtil.SwapEndian(Magic);
                 Type = (ResourceType)DataUtil.SwapEndian((uint)Type);
                 Flags = DataUtil.SwapEndian(Flags);

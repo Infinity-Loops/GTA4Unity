@@ -445,14 +445,20 @@ public class Ipl_INST : IPL_Item
         rotation = new Vector4(reader.ReadFloat(), reader.ReadFloat(), reader.ReadFloat(), reader.ReadFloat());
 
         long tempHash = reader.ReadUInt();
-        name = "" + tempHash;
         hash = (int)tempHash;
-
-        name = ini.GetValue<string>("Hashes", name); // temp
-        if (name == null)
+        
+        // Use comprehensive hash resolver
+        name = IVUnity.ComprehensiveHashResolver.ResolveHash((uint)tempHash);
+        
+        // Fallback to old method if comprehensive resolver not initialized
+        if (name.StartsWith("0x"))
         {
-            name = "";
-            //Debug.LogError($"Hash {hash} not found for IPL Instance.");
+            string hashStr = tempHash.ToString();
+            string resolved = ini.GetValue<string>("Hashes", hashStr);
+            if (resolved != null)
+            {
+                name = resolved;
+            }
         }
 
         unknown1 = reader.ReadInt();

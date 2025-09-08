@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 
@@ -44,7 +45,11 @@ public class IniJson : Dictionary<string, Dictionary<string, object>>
         }
         else
         {
-            Debug.Log($"Couldn't find {columm}|{row}");
+            // Only log for Hashes that look important (not numeric hashes that are likely unresolved)
+            if (columm != "Hashes" || (!row.All(char.IsDigit) && row.Length < 10))
+            {
+                Debug.Log($"Couldn't find {columm}|{row}");
+            }
             return default(T);
         }
     }

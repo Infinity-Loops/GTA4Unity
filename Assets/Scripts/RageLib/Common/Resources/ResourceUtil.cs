@@ -21,6 +21,7 @@
 using System;
 using System.IO;
 using System.Text;
+using RageLib.Common;
 
 namespace RageLib.Common.Resources
 {
@@ -30,7 +31,7 @@ namespace RageLib.Common.Resources
         {
             var rh = new ResourceHeader();
             rh.Read(new BinaryReader(stream));
-            return rh.Magic == ResourceHeader.MagicValue;
+            return rh.IsValidRSC();
         }
 
         public static void GetResourceData(Stream stream, out uint flags, out ResourceType type)

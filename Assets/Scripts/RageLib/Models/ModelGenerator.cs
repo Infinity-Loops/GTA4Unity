@@ -246,7 +246,9 @@ namespace RageLib.Models
             {
                 for (int i = 0; i < Vertices.Length; i++)
                 {
+                    // Keep original positions - they were correct
                     Positions[i] = Vertices[i].Position;
+                    
                     if (HasNormals)
                     {
                         Normals[i] = Vertices[i].Normal;
@@ -270,9 +272,10 @@ namespace RageLib.Models
             {
                 for (int i = 0; i < FaceCount; i++)
                 {
+                    // Reverse winding order to fix mirroring from coordinate system conversion
                     TriangleIndices.Add(Indices[i * 3 + 0]);
-                    TriangleIndices.Add(Indices[i * 3 + 1]);
                     TriangleIndices.Add(Indices[i * 3 + 2]);
+                    TriangleIndices.Add(Indices[i * 3 + 1]);
                 }
             }
         }

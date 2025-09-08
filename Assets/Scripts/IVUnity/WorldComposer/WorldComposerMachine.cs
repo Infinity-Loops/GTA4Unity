@@ -474,11 +474,15 @@ public class WorldComposerMachine : MonoBehaviour
             GameObject gameObjectInstance = (GameObject)Resources.InstanceIDToObject(gameObject);
             gameObjectInstance.name = modelFileName;
 
+            // Apply rotation to fix coordinate system
             Quaternion rotation = Quaternion.Euler(-90, 0, 0);
             Vector3 newPosition = rotation * definitions.position;
 
             gameObjectInstance.transform.position = newPosition;
             gameObjectInstance.transform.rotation = rotation * definitions.unityRotation;
+            
+            // Apply negative scale on one axis to fix mirroring
+            gameObjectInstance.transform.localScale = new Vector3(1, 1, -1);
 
             geometry.data.model = model;
             geometry.data.collection = collection;

@@ -33,6 +33,8 @@ public class GTADatLoader
     internal List<Water> waterPlanes = new List<Water>();
     internal RealFileSystem root;
 
+    private List<string> localWPLFiles = new List<string>();
+
     public GTADatLoader(string gameDir, RealFileSystem fs)
     {
         this.gameDir = gameDir;
@@ -48,6 +50,8 @@ public class GTADatLoader
             imgLoader = new IMGLoader(gameDir);
 
             List<string> imgFiles = new List<string>();
+
+            SearchFilesRecursively(gameDir, ".wpl", localWPLFiles);
 
             SearchFilesRecursively(gameDir, ".img", imgFiles);
 
@@ -71,12 +75,10 @@ public class GTADatLoader
             //}
 
             img = imgLoader.imgsPath;
-
         });
 
         await Task.Run(() =>
         {
-
             ideLoader = new IDELoader();
 
             //Load Vehicles
@@ -99,15 +101,15 @@ public class GTADatLoader
             LoadingScreen.ResetProgress();
 
             Debug.Log($"Total ide:{ideFiles.Count}");
-
         });
 
-        Debug.Log($"Total hashes: {Hashes.table["hashes"].Count}");
+        // Initialize comprehensive hash resolver with all game data
+        IVUnity.ComprehensiveHashResolver.Initialize(this);
+        Debug.Log($"Total hashes: {IVUnity.ComprehensiveHashResolver.GetKnownHashCount()}");
 
 
         await Task.Run(() =>
         {
-
             List<FSObject> wplFiles = new List<FSObject>();
 
             foreach (var image in imgLoader.imgs)
@@ -118,19 +120,11 @@ public class GTADatLoader
 
             iplLoader = new IPLLoader();
 
-            //This only loads lods (not useful for now)
-
-            //List<string> actualWPLFiles = new List<string>();
-
-            //foreach (var wplFile in ipl)
-            //{
-            //    if (wplFile.EndsWith(".WPL"))
-            //    {
-            //        actualWPLFiles.Add(wplFile);
-            //        byte[] stream = System.IO.File.ReadAllBytes($"{gameDir}/{wplFile}");
-            //        iplLoader.LoadIPL(stream);
-            //    }
-            //}
+            foreach (var wplFile in localWPLFiles)
+            {
+                byte[] stream = System.IO.File.ReadAllBytes(wplFile);
+                iplLoader.LoadIPL(Path.GetFileName(wplFile), stream);
+            }
 
             //ipl = actualWPLFiles;
 
@@ -150,19 +144,18 @@ public class GTADatLoader
                 // }
             }
 
+
             LoadingScreen.ResetProgress();
 
             //iplLoader = new IPLLoader();
 
 
             Debug.Log($"Loaded {ipl.Count} WPL files...");
-
         });
 
 
         await Task.Run(() =>
         {
-
             LoadingScreen.SetupLoadingTarget(water.Count);
 
             for (int i = 0; i < water.Count; i++)
@@ -174,7 +167,6 @@ public class GTADatLoader
             }
 
             LoadingScreen.ResetProgress();
-
         });
 
         await Task.Run(() =>
@@ -225,6 +217,7 @@ public class GTADatLoader
                 {
                     split[1] = split[1].Replace("IPL", "WPL");
                 }
+
                 if (split[0].Equals("IMG"))
                 {
                     split[1] = split[1].Replace("\\", "/");

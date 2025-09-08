@@ -12,19 +12,22 @@ public class StaticGeometry : MonoBehaviour
     public StaticGeometryData data = new StaticGeometryData();
 
     private static Dictionary<string, Mesh> meshCache = new Dictionary<string, Mesh>();
-    private static Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
-    private static Dictionary<string, Texture2D> textureCache = new Dictionary<string, Texture2D>();
     private static Dictionary<string, ModelNode> modelCache = new Dictionary<string, ModelNode>();
 
     private List<GameObject> childrens = new List<GameObject>();
     private bool loaded;
+    private bool isDestroyed = false;
 
     public async void LoadModel()
     {
+        if (this == null || isDestroyed) return;
+        
         ModelNode cachedModel = null;
 
         await Task.Run(() =>
          {
+             if (isDestroyed) return;
+             
              lock (modelCache)
              {
                  if (data.modelFileName != null)
@@ -34,14 +37,24 @@ public class StaticGeometry : MonoBehaviour
 
                          try
                          {
-                             if (data.collection != null)
+                             if (data.collection != null && !isDestroyed)
                              {
                                  if (data.collection.Length > 0)
                                  {
                                      for (int i = 0; i < data.collection.Length; i++)
                                      {
+                                         if (isDestroyed) return;
                                          var textureFile = data.collection[i];
                                          textureFile.Read();
+                                         
+                                                 foreach (var tex in textureFile.Textures)
+                                         {
+                                             if (!string.IsNullOrEmpty(tex.Name))
+                                             {
+                                                 IVUnity.MaterialTextureResolver.RegisterTextureReference(
+                                                     tex.Name, tex, data.modelFileName, false);
+                                             }
+                                         }
                                      }
                                  }
                              }
@@ -53,8 +66,10 @@ public class StaticGeometry : MonoBehaviour
 
                          try
                          {
-
-                             data.model.Read();
+                             if (data.model != null && data.model.File == null && !isDestroyed)
+                             {
+                                 data.model.Read();
+                             }
                          }
                          catch
                          {
@@ -62,12 +77,11 @@ public class StaticGeometry : MonoBehaviour
                          }
 
 
-                         if(data.model != null)
+                         if(data.model != null && !isDestroyed)
                          {
                              var modelNode = data.model.GetModel(data.collection);
                              cachedModel = modelNode;
                              modelCache[data.modelFileName] = cachedModel;
-                             WorldComposerMachine.Instance.loadedObjects++;
                          }
                      }
                  }
@@ -75,6 +89,8 @@ public class StaticGeometry : MonoBehaviour
              }
          });
 
+        if (this == null || gameObject == null || isDestroyed) return;
+        
         if (cachedModel != null)
         {
             LoadModelRecursive(gameObject, cachedModel, data.modelFileName);
@@ -106,35 +122,18 @@ public class StaticGeometry : MonoBehaviour
                         var rageMaterial = modelChildren.Model3D.material;
                         if (rageMaterial != null)
                         {
-                            if (materialCache.TryGetValue($"{rageMaterial.shaderName}@{rageMaterial.textureName}", out var cachedMaterial))
+                            Texture2D embeddedTex = null;
+                            if (rageMaterial.mainTex != null)
                             {
-                                rendererChildren.sharedMaterial = cachedMaterial;
+                                embeddedTex = rageMaterial.mainTex.GetUnityTexture();
                             }
-                            else
+                            var sharedMaterial = IVUnity.MaterialTextureResolver.GetOrCreateSharedMaterial(
+                                rageMaterial.shaderName, rageMaterial.textureName, embeddedTex);
+                            
+                            rendererChildren.sharedMaterial = sharedMaterial;
+                            if (sharedMaterial != null && sharedMaterial.mainTexture != null)
                             {
-                                var unityMaterial = new Material(Shader.Find("gta_default"));
-                                unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
-                                unityMaterial.enableInstancing = true;
-
-                                if (!string.IsNullOrEmpty(rageMaterial.textureName))
-                                {
-                                    if (textureCache.TryGetValue(rageMaterial.textureName, out var cachedTex))
-                                    {
-                                        unityMaterial.SetTexture("_MainTex", cachedTex);
-                                    }
-                                    else
-                                    {
-                                        if (rageMaterial.mainTex != null)
-                                        {
-                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                            unityMaterial.SetTexture("_MainTex", tex2d);
-                                            textureCache.Add(rageMaterial.textureName, tex2d);
-                                        }
-                                    }
-                                }
-
-
-                                rendererChildren.sharedMaterial = unityMaterial;
+                                IVUnity.MaterialTextureResolver.RegisterMaterial(rageMaterial.shaderName, rageMaterial.textureName, sharedMaterial);
                             }
                         }
                     }
@@ -144,34 +143,18 @@ public class StaticGeometry : MonoBehaviour
                         var rageMaterial = modelChildren.Model3D.material;
                         if (rageMaterial != null)
                         {
-                            if (materialCache.TryGetValue($"{rageMaterial.shaderName}@{rageMaterial.textureName}", out var cachedMaterial))
+                            Texture2D embeddedTex = null;
+                            if (rageMaterial.mainTex != null)
                             {
-                                rendererChildren.sharedMaterial = cachedMaterial;
+                                embeddedTex = rageMaterial.mainTex.GetUnityTexture();
                             }
-                            else
+                            var sharedMaterial = IVUnity.MaterialTextureResolver.GetOrCreateSharedMaterial(
+                                rageMaterial.shaderName, rageMaterial.textureName, embeddedTex);
+                            
+                            rendererChildren.sharedMaterial = sharedMaterial;
+                            if (sharedMaterial != null && sharedMaterial.mainTexture != null)
                             {
-                                var unityMaterial = new Material(Shader.Find("gta_default"));
-                                unityMaterial.name = $"{rageMaterial.shaderName}@{rageMaterial.textureName}";
-                                unityMaterial.enableInstancing = true;
-
-                                if (!string.IsNullOrEmpty(rageMaterial.textureName))
-                                {
-                                    if (textureCache.TryGetValue(rageMaterial.textureName, out Texture2D cachedTex))
-                                    {
-                                        unityMaterial.SetTexture("_MainTex", cachedTex);
-                                    }
-                                    else
-                                    {
-                                        if (!string.IsNullOrEmpty(rageMaterial.textureName) && rageMaterial.mainTex != null)
-                                        {
-                                            var tex2d = rageMaterial.mainTex.GetUnityTexture();
-                                            unityMaterial.SetTexture("_MainTex", tex2d);
-                                            textureCache.Add(rageMaterial.textureName, tex2d);
-                                        }
-                                    }
-                                }
-
-                                rendererChildren.sharedMaterial = unityMaterial;
+                                IVUnity.MaterialTextureResolver.RegisterMaterial(rageMaterial.shaderName, rageMaterial.textureName, sharedMaterial);
                             }
                         }
 
@@ -184,6 +167,16 @@ public class StaticGeometry : MonoBehaviour
                 LoadModelRecursive(children, modelChildren, originalName);
             }
         }
+    }
+    
+    void OnDestroy()
+    {
+        isDestroyed = true;
+    }
+    
+    void OnDisable()
+    {
+        isDestroyed = true;
     }
 }
 

@@ -28,6 +28,7 @@ namespace RageLib.FileSystem.IMG
     {
         private Stream _stream;
         private string _filename;
+        private readonly object _readLock = new object();
 
         public Header Header { get; private set; }
         public TOC TOC { get; private set; }
@@ -224,10 +225,13 @@ namespace RageLib.FileSystem.IMG
 
         public byte[] ReadData(int offset, int length)
         {
-            var buffer = new byte[length];
-            _stream.Seek(offset, SeekOrigin.Begin);
-            _stream.Read(buffer, 0, length);
-            return buffer;
+            lock (_readLock)
+            {
+                var buffer = new byte[length];
+                _stream.Seek(offset, SeekOrigin.Begin);
+                _stream.Read(buffer, 0, length);
+                return buffer;
+            }
         }
     }
 }
