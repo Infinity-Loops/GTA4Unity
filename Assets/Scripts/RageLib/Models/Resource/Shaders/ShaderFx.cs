@@ -4,7 +4,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Models.Resource.Shaders
 {
-    internal class ShaderFx : Shader, IFileAccess
+    public class ShaderFx : Shader, IFileAccess
     {
         private uint Unknown14 { get; set; }
         private uint Unknown15 { get; set; }

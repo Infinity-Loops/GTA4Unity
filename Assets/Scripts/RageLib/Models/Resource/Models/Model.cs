@@ -25,14 +25,25 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
-    internal class Model : DATBase, IFileAccess
+    public class Model : DATBase, IFileAccess
     {
         public PtrCollection<Geometry> Geometries { get; private set; }
-        private ushort Unknown1 { get; set; } // the four following really should be bytes
-        private ushort Unknown2 { get; set; }
-        private ushort Unknown3 { get; set; }
-        private ushort GeoCount { get; set; }
-        public SimpleArray<Vector4> UnknownVectors { get; private set; }
+        
+        // grmModel fields
+        // These should actually be bytes but are read as ushorts (pairs)
+        private byte MatrixCount { get; set; }      // Number of bone matrices for skinning
+        private byte Flags { get; set; }            // Model flags (RELATIVE, RESOURCED, etc.)
+        private byte Type { get; set; }             // Model type identifier
+        private byte MatrixIndex { get; set; }      // Matrix index for hierarchical models
+        
+        private byte RenderMask { get; set; }       // Render bucket mask
+        private byte SkinFlag { get; set; }         // Skinning enabled flag
+        private ushort GeometryCount { get; set; }  // Number of geometries (matches Geometries.Count)
+        
+        // Bounding boxes: one per geometry + one for the whole model
+        public SimpleArray<Vector4> BoundingBoxes { get; private set; }
+        
+        // Maps each geometry to a shader index in the ShaderGroup
         public SimpleArray<ushort> ShaderMappings { get; private set; }
 
         #region Implementation of IFileAccess
@@ -43,21 +54,27 @@ namespace RageLib.Models.Resource.Models
 
             Geometries = new PtrCollection<Geometry>(br);
 
-            var unknownVectorOffsets = ResourceUtil.ReadOffset(br);
-            var materialMappingOffset = ResourceUtil.ReadOffset(br);
+            var boundingBoxesOffset = ResourceUtil.ReadOffset(br);
+            var shaderMappingOffset = ResourceUtil.ReadOffset(br);
 
-            Unknown1 = br.ReadUInt16();
-            Unknown2 = br.ReadUInt16();
+            // Read as bytes instead of ushorts for proper field mapping
+            MatrixCount = br.ReadByte();
+            Flags = br.ReadByte();
+            Type = br.ReadByte();
+            MatrixIndex = br.ReadByte();
 
-            Unknown3 = br.ReadUInt16();
-            GeoCount = br.ReadUInt16();
+            RenderMask = br.ReadByte();
+            SkinFlag = br.ReadByte();
+            GeometryCount = br.ReadUInt16();
 
             //
 
-            br.BaseStream.Seek(unknownVectorOffsets, SeekOrigin.Begin);
-            UnknownVectors = new SimpleArray<Vector4>(br, 4, reader => new Vector4(reader));
+            br.BaseStream.Seek(boundingBoxesOffset, SeekOrigin.Begin);
+            // Bounding boxes: one per geometry + one for the whole model
+            int boundingBoxCount = Geometries.Count + 1;
+            BoundingBoxes = new SimpleArray<Vector4>(br, boundingBoxCount * 2, reader => new Vector4(reader));
 
-            br.BaseStream.Seek(materialMappingOffset, SeekOrigin.Begin);
+            br.BaseStream.Seek(shaderMappingOffset, SeekOrigin.Begin);
             ShaderMappings = new SimpleArray<ushort>(br, Geometries.Count, reader => reader.ReadUInt16());
         }
 

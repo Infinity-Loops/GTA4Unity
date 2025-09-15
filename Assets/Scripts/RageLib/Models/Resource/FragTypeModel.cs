@@ -27,9 +27,9 @@ using RageLib.Common.ResourceTypes;
 namespace RageLib.Models.Resource
 {
     // gtaFragType
-    internal class FragTypeModel : IFileAccess, IDataReader, IEmbeddedResourceReader, IDisposable
+    public class FragTypeModel : IFileAccess, IDataReader, IEmbeddedResourceReader, IDisposable
     {
-        internal class FragTypeChild : IFileAccess
+        public class FragTypeChild : IFileAccess
         {
             public DrawableModel Drawable { get; set; }
 
@@ -64,6 +64,7 @@ namespace RageLib.Models.Resource
 
         public DrawableModel Drawable { get; set; }
         public FragTypeChild[] Children { get; set; }
+        public Skeletons.Skeleton Skeleton { get; set; } // Expose skeleton for fragment positioning
 
         #region Implementation of IFileAccess
 
@@ -76,6 +77,9 @@ namespace RageLib.Models.Resource
                 Drawable = new DrawableModel();
                 br.BaseStream.Seek(offset, SeekOrigin.Begin);
                 Drawable.Read(br);
+                
+                // Get the skeleton from the drawable if it exists
+                Skeleton = Drawable.Skeleton;
             }
             else
             {
@@ -139,6 +143,44 @@ namespace RageLib.Models.Resource
             Drawable.ReadEmbeddedResources(systemMemory, graphicsMemory);
         }
 
+        #endregion
+
+        #region Helper Methods
+        
+        /// <summary>
+        /// Gets the position for a specific child fragment using its drawable center
+        /// </summary>
+        public UnityEngine.Vector3 GetChildPosition(int childIndex)
+        {
+            if (childIndex < 0 || childIndex >= Children.Length)
+                return UnityEngine.Vector3.zero;
+
+            var child = Children[childIndex];
+            if (child == null || child.Drawable == null)
+                return UnityEngine.Vector3.zero;
+
+            // Use the drawable's center as the fragment position
+            var center = child.Drawable.Center;
+            return new UnityEngine.Vector3(center.X, center.Y, center.Z);
+        }
+        
+        /// <summary>
+        /// Gets all child positions as Unity vectors
+        /// </summary>
+        public UnityEngine.Vector3[] GetAllChildPositions()
+        {
+            if (Children == null)
+                return new UnityEngine.Vector3[0];
+
+            var positions = new UnityEngine.Vector3[Children.Length];
+            for (int i = 0; i < Children.Length; i++)
+            {
+                positions[i] = GetChildPosition(i);
+            }
+
+            return positions;
+        }
+        
         #endregion
 
         #region Implementation of IDisposable

@@ -394,6 +394,17 @@ public class Ipl_JUMP : IPL_Item
 
 public class Ipl_INST : IPL_Item
 {
+    // Virtual parent transform matrix for IPL World Math Representation
+    // This simulates a parent GameObject with rotation(-90,0,0) and scale(-1,1,1)
+    // to convert from GTA coordinate system to Unity coordinate system
+    private static readonly Matrix4x4 VirtualParentMatrix = Matrix4x4.TRS(
+        Vector3.zero,
+        Quaternion.Euler(-90, 0, 0),
+        new Vector3(-1, 1, 1)
+    );
+
+    private static readonly Quaternion ParentRotation = Quaternion.Euler(-90, 0, 0);
+    
     public int id;
     public string name = "";
     public int hash = 0;
@@ -403,12 +414,47 @@ public class Ipl_INST : IPL_Item
     {
         get
         {
-            Quaternion rotation = Quaternion.Euler(-90, 0, 0);
-            Vector3 newPosition = rotation * position;
-            return newPosition;
+            // Use scale if set, otherwise default to (1,1,1)
+            Vector3 localScale = (scale.x == 0 && scale.y == 0 && scale.z == 0) ? Vector3.one : scale;
+            
+            // Create local transform matrix for this IPL instance
+            // Note: Using -w for Unity quaternion conversion from GTA format
+            Matrix4x4 localMatrix = Matrix4x4.TRS(
+                position,
+                new Quaternion(rotation.x, rotation.y, rotation.z, -rotation.w),
+                localScale
+            );
+            
+            // Apply virtual parent transform to get world matrix
+            Matrix4x4 worldMatrix = VirtualParentMatrix * localMatrix;
+            
+            // Extract world position from the matrix
+            return worldMatrix.GetColumn(3);
         }
     }
     public Vector3 scale = new Vector3(0.0f, 0.0f, 0.0f);
+    public Vector3 unityScale
+    {
+        get
+        {
+            // Use scale if set, otherwise default to (1,1,1)
+            Vector3 localScale = (scale.x == 0 && scale.y == 0 && scale.z == 0) ? Vector3.one : scale;
+            
+            // Create local transform matrix
+            // Note: Using -w for Unity quaternion conversion from GTA format
+            Matrix4x4 localMatrix = Matrix4x4.TRS(
+                position,
+                new Quaternion(rotation.x, rotation.y, rotation.z, -rotation.w),
+                localScale
+            );
+            
+            // Apply virtual parent transform to get world matrix
+            Matrix4x4 worldMatrix = VirtualParentMatrix * localMatrix;
+            
+            // Extract world scale from the matrix
+            return worldMatrix.lossyScale;
+        }
+    }
     public Vector4 rotation = new Vector4(0.0f, 0.0f, 0.0f, 1.0f);
 
     public int lod;
@@ -423,7 +469,14 @@ public class Ipl_INST : IPL_Item
     {
         get
         {
-            return new Quaternion(rotation.x,rotation.y, rotation.z, -rotation.w);
+            // Convert GTA quaternion to Unity format (negate w)
+            // When we flip X axis (scale -1,1,1), we need to adjust the quaternion:
+            // - Keep X component the same (rotation around X axis is unchanged)
+            // - Invert Y and Z components (rotations around Y and Z axes are reversed)
+            Quaternion localRotation = new Quaternion(rotation.x, -rotation.y, -rotation.z, -rotation.w);
+            
+            // Apply parent rotation (-90 on X axis)
+            return ParentRotation * localRotation;
         }
     }
 

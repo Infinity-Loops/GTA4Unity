@@ -24,7 +24,7 @@ using RageLib.Common;
 
 namespace RageLib.Models.Resource.Models
 {
-    internal class VertexDeclaration : IFileAccess
+    public class VertexDeclaration : IFileAccess
     {
         public uint UsageFlags { get; set; }
         public ushort Stride { get; set; }

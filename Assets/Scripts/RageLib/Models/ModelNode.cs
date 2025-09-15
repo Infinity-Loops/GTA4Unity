@@ -31,6 +31,10 @@ namespace RageLib.Models
         public object DataModel { get; set; }
         public bool NoCount { get; set; }
         public bool Selected { get; set; }
+        
+        // Fragment-specific data
+        public Resource.FragTypeModel.FragTypeChild FragmentChild { get; set; }
+        public int FragmentChildIndex { get; set; } = -1;
 
         public bool IsAnyNodeSelected()
         {

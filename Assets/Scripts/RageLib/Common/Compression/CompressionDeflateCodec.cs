@@ -18,6 +18,7 @@
 
 \**********************************************************************/
 
+using System;
 using System.IO;
 using ICSharpCode.SharpZipLib.Core;
 using ICSharpCode.SharpZipLib.Zip.Compression;
@@ -27,42 +28,79 @@ namespace RageLib.Common.Compression
 {
     internal class CompressionDeflateCodec : ICompressionCodec
     {
-        private const int CopyBufferSize = 32*1024;    // 32kb
+        // Optimized buffer size - larger for better performance
+        private const int CopyBufferSize = 64*1024;    // 64kb for better throughput
+        
+        // Reusable buffers to reduce allocations
+        [ThreadStatic] private static byte[] _sharedBuffer;
+        
+        private static byte[] GetSharedBuffer()
+        {
+            if (_sharedBuffer == null)
+                _sharedBuffer = new byte[CopyBufferSize];
+            return _sharedBuffer;
+        }
 
         public void Compress(Stream source, Stream destination)
         {
-            /*
-            var deflater = new DeflaterOutputStream(destination, new Deflater(Deflater.DEFAULT_COMPRESSION, true));
-
-            var dataBuffer = new byte[CopyBufferSize];
-            StreamUtils.Copy(source, deflater, dataBuffer);
-             */
-
-            var def = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
-            
-            var inputData = new byte[source.Length - source.Position];
-            source.Read(inputData, 0, inputData.Length);
-
-            var buffer = new byte[CopyBufferSize];
-
-            def.SetInput( inputData, 0, inputData.Length );
-            def.Finish();
-
-            while(!def.IsFinished)
+            try
             {
-                int outputLen = def.Deflate(buffer, 0, buffer.Length);
-                destination.Write( buffer, 0, outputLen );
-            }
+                var def = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+                
+                // Pre-allocate based on stream length for better memory usage
+                long inputLength = source.Length - source.Position;
+                if (inputLength > int.MaxValue)
+                    throw new System.ArgumentException("Input stream too large for compression");
+                    
+                var inputData = new byte[inputLength];
+                int totalRead = 0;
+                int bytesRead;
+                
+                // Ensure we read all data even if Read doesn't return everything at once
+                while (totalRead < inputData.Length)
+                {
+                    bytesRead = source.Read(inputData, totalRead, inputData.Length - totalRead);
+                    if (bytesRead == 0)
+                        break;
+                    totalRead += bytesRead;
+                }
 
-            def.Reset();
+                var buffer = GetSharedBuffer();
+
+                def.SetInput(inputData, 0, totalRead);
+                def.Finish();
+
+                while (!def.IsFinished)
+                {
+                    int outputLen = def.Deflate(buffer, 0, buffer.Length);
+                    if (outputLen > 0)
+                        destination.Write(buffer, 0, outputLen);
+                }
+
+                def.Reset();
+            }
+            catch (System.Exception ex)
+            {
+                throw new System.IO.IOException($"Deflate compression failed: {ex.Message}", ex);
+            }
         }
 
         public void Decompress(Stream source, Stream destination)
         {
-            var inflater = new InflaterInputStream(source, new Inflater(true));
-
-            var dataBuffer = new byte[CopyBufferSize];
-            StreamUtils.Copy(inflater, destination, dataBuffer);
+            try
+            {
+                using (var inflater = new InflaterInputStream(source, new Inflater(true)))
+                {
+                    inflater.IsStreamOwner = false; // Don't close the source stream
+                    
+                    var dataBuffer = GetSharedBuffer();
+                    StreamUtils.Copy(inflater, destination, dataBuffer);
+                }
+            }
+            catch (ICSharpCode.SharpZipLib.SharpZipBaseException ex)
+            {
+                throw new System.IO.IOException($"Deflate decompression failed: {ex.Message}", ex);
+            }
         }
     }
 }

@@ -23,7 +23,7 @@ using RageLib.Common;
 
 namespace RageLib.Models.Resource.Skeletons
 {
-    internal class BoneIDMapping : IFileAccess
+    public class BoneIDMapping : IFileAccess
     {
         public short ID { get; set; }
         public short Index { get; set; }

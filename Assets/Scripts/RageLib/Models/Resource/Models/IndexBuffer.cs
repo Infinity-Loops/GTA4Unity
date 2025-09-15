@@ -25,7 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
-    internal class IndexBuffer : DATBase, IFileAccess
+    public class IndexBuffer : DATBase, IFileAccess
     {
         public uint IndexCount { get; private set; }
         public uint DataOffset { get; private set; }

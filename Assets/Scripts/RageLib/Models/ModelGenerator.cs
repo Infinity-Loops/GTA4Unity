@@ -69,15 +69,24 @@ namespace RageLib.Models
 
             var parentDrawableNode = GenerateModel(fragTypeModel.Drawable, textures);
             parentDrawableNode.NoCount = false;
+            parentDrawableNode.Name = "FragmentParent";
             fragTypeGroup.Children.Add(parentDrawableNode.Model3D);
             fragTypeNode.Children.Add(parentDrawableNode);
 
-            foreach (var fragTypeChild in fragTypeModel.Children)
+            // Process fragment children with proper naming and transform data
+            for (int i = 0; i < fragTypeModel.Children.Length; i++)
             {
+                var fragTypeChild = fragTypeModel.Children[i];
                 if (fragTypeChild.Drawable != null && fragTypeChild.Drawable.ModelCollection.Length > 0)
                 {
                     var childDrawableNode = GenerateModel(fragTypeChild.Drawable, textures);
                     childDrawableNode.NoCount = false;
+                    childDrawableNode.Name = $"FragmentChild_{i}";
+                    
+                    // Store the fragment child reference for transform application
+                    childDrawableNode.FragmentChild = fragTypeChild;
+                    childDrawableNode.FragmentChildIndex = i;
+                    
                     fragTypeGroup.Children.Add(childDrawableNode.Model3D);
                     fragTypeNode.Children.Add(childDrawableNode);
                 }
@@ -114,8 +123,13 @@ namespace RageLib.Models
             {
                 var drawableMat = drawable.Materials[i];
                 string texName = null;
+                string normalTexName = null;
+                string specularTexName = null;
                 RageUnityTexture mainTex = new RageUnityTexture(1, 1, TextureFormat.ARGB32, false);
+                RageUnityTexture normalTex = null;
+                RageUnityTexture specularTex = null;
 
+                // Get main texture
                 if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.Texture))
                 {
                     var texture = drawableMat.Parameters[(int)ParamNameHash.Texture] as MaterialParamTexture;
@@ -150,7 +164,33 @@ namespace RageLib.Models
                     }
                 }
 
+                // Get normal texture
+                if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.NormalTexture))
+                {
+                    var normalTexture = drawableMat.Parameters[(int)ParamNameHash.NormalTexture] as MaterialParamTexture;
+                    if (normalTexture != null)
+                    {
+                        normalTex = GetTexture(normalTexture.TextureName, drawable.AttachedTexture, textures);
+                        normalTexName = normalTexture.TextureName;
+                    }
+                }
+
+                // Get specular texture
+                if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.SpecularTexture))
+                {
+                    var specularTexture = drawableMat.Parameters[(int)ParamNameHash.SpecularTexture] as MaterialParamTexture;
+                    if (specularTexture != null)
+                    {
+                        specularTex = GetTexture(specularTexture.TextureName, drawable.AttachedTexture, textures);
+                        specularTexName = specularTexture.TextureName;
+                    }
+                }
+
                 var material = new RageMaterial(drawableMat.ShaderName, texName, mainTex);
+                material.normalTex = normalTex;
+                material.normalTextureName = normalTexName;
+                material.specularTex = specularTex;
+                material.specularTextureName = specularTexName;
                 materials[i] = material;
             }
 
@@ -246,7 +286,6 @@ namespace RageLib.Models
             {
                 for (int i = 0; i < Vertices.Length; i++)
                 {
-                    // Keep original positions - they were correct
                     Positions[i] = Vertices[i].Position;
                     
                     if (HasNormals)
@@ -255,7 +294,9 @@ namespace RageLib.Models
                     }
                     if (HasTextureCoordinates)
                     {
-                        TextureCoordinates[i] = Vertices[i].TextureCoordinates;
+                        // Flip U coordinate to compensate for X-axis flip in world space
+                        var uv = Vertices[i].TextureCoordinates;
+                        TextureCoordinates[i] = new Vector2(1.0f - uv.x, uv.y);
                     }
                 }
             }
@@ -272,10 +313,9 @@ namespace RageLib.Models
             {
                 for (int i = 0; i < FaceCount; i++)
                 {
-                    // Reverse winding order to fix mirroring from coordinate system conversion
                     TriangleIndices.Add(Indices[i * 3 + 0]);
-                    TriangleIndices.Add(Indices[i * 3 + 2]);
                     TriangleIndices.Add(Indices[i * 3 + 1]);
+                    TriangleIndices.Add(Indices[i * 3 + 2]);
                 }
             }
         }

@@ -102,6 +102,7 @@ namespace IVUnity
             public string TextureName;
             public Vector3 Position;
             public Quaternion Rotation;
+            public Vector3 Scale;
             public float Priority;
             public int LODLevel;
             public Ipl_INST Instance;
@@ -845,18 +846,15 @@ namespace IVUnity
         
         private void CreateObjectFromDataInternal(GameObject go, LoadTask task, ModelData modelData, TextureData textureData)
         {
-            
-            Quaternion rotation = Quaternion.Euler(-90, 0, 0);
-            Vector3 newPosition = rotation * task.Position;
-            go.transform.position = newPosition;
-            go.transform.rotation = rotation * task.Rotation;
-            go.transform.localScale = new Vector3(1, 1, -1);
+            go.transform.position =  task.Position;
+            go.transform.rotation = task.Rotation;
+            go.transform.localScale = task.Scale != Vector3.zero ? task.Scale : Vector3.one;
             go.transform.parent = transform;
             
             
             if (objectsLoadedThisFrame < 5) 
             {
-                Debug.Log($"Created {task.ModelName} at position {newPosition} (original: {task.Position})");
+                Debug.Log($"Created {task.ModelName} at position {task.Position}");
             }
             
             
@@ -1144,7 +1142,7 @@ namespace IVUnity
                         Id = objId,
                         ModelName = modelFileName,
                         TextureName = objDef.textureName + (objDef.textureName.Contains(".") ? "" : ".wtd"),
-                        Position = inst.position,
+                        Position = inst.unityPosition,
                         UnityPosition = inst.unityPosition,
                         Rotation = inst.unityRotation,
                         Instance = inst,
@@ -1211,6 +1209,7 @@ namespace IVUnity
                     TextureName = obj.TextureName,
                     Position = obj.Position,
                     Rotation = obj.Rotation,
+                    Scale = obj.Instance != null ? obj.Instance.unityScale : Vector3.one,
                     Priority = 1f / clampedDistance,
                     LODLevel = GetLODLevel(distance),
                     Instance = obj.Instance,
@@ -1402,8 +1401,9 @@ namespace IVUnity
                         Id = id,
                         ModelName = objDef.modelName + ".wdr",
                         TextureName = objDef.textureName + ".wtd",
-                        Position = inst.position,
+                        Position = inst.unityPosition,
                         Rotation = inst.unityRotation,
+                        Scale = inst.unityScale,
                         Priority = 1f / clampedDistance,
                         LODLevel = GetLODLevel(distance),
                         Instance = inst,
@@ -1435,7 +1435,7 @@ namespace IVUnity
             
             GameObject waterModel = new GameObject("Water");
             waterModel.transform.parent = transform;
-            waterModel.transform.localScale = Vector3.one * 0.1f;
+            waterModel.transform.localScale = new Vector3(-0.1f, 0.1f, 0.1f);
             
             var renderer = waterModel.AddComponent<MeshRenderer>();
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -1473,15 +1473,20 @@ namespace IVUnity
                     vertexPoints.Add(p3);
                     
                     
-                    uvs.Add(new Vector2(0, 0));
-                    uvs.Add(new Vector2(plane.u, 0));
-                    uvs.Add(new Vector2(plane.u, plane.v));
-                    uvs.Add(new Vector2(0, plane.v));
+                    // Calculate UVs based on world position for proper tiling
+                    // Use a tiling factor to control texture scale
+                    float uvScale = 0.05f; // Adjust this value to control texture tiling
+                    
+                    uvs.Add(new Vector2(p0.x * uvScale, p0.z * uvScale));
+                    uvs.Add(new Vector2(p1.x * uvScale, p1.z * uvScale));
+                    uvs.Add(new Vector2(p2.x * uvScale, p2.z * uvScale));
+                    uvs.Add(new Vector2(p3.x * uvScale, p3.z * uvScale));
                     
                     
                     triangles.Add(vertexIndex + 0);
                     triangles.Add(vertexIndex + 2);
                     triangles.Add(vertexIndex + 1);
+
                     
                     triangles.Add(vertexIndex + 1);
                     triangles.Add(vertexIndex + 2);
@@ -2028,6 +2033,7 @@ namespace IVUnity
                     TextureName = obj.TextureName,
                     Position = obj.Position,
                     Rotation = obj.Rotation,
+                    Scale = obj.Instance != null ? obj.Instance.unityScale : Vector3.one,
                     Priority = 1f / clampedDistance,
                     LODLevel = GetLODLevel(distance),
                     Instance = obj.Instance,

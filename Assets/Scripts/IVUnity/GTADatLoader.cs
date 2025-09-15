@@ -61,18 +61,11 @@ public class GTADatLoader
 
             for (int i = 0; i < imgList.Count; i++)
             {
-                //Debug.Log($"Loading IMG container: {gameDir}/{imgList[i].Replace(gameDir, "")}");
                 LoadingScreen.AdvanceProgress(imgList[i]);
                 imgLoader.LoadManual(imgList[i]);
             }
 
             LoadingScreen.ResetProgress();
-
-            //for (int i = 0; i < imgList.Count; i++)
-            //{
-            //    Debug.Log($"Loading IMG container: {gameDir}/{imgList[i]}");
-            //    imgLoader.Load(imgList[i]);
-            //}
 
             img = imgLoader.imgsPath;
         });
@@ -80,10 +73,7 @@ public class GTADatLoader
         await Task.Run(() =>
         {
             ideLoader = new IDELoader();
-
-            //Load Vehicles
-            //ideLoader.LoadIDE($"{gameDir}/common/data/vehicles.ide");
-
+            
             List<string> ideFiles = new List<string>();
 
             SearchFilesRecursively(gameDir, ".ide", ideFiles);
@@ -103,11 +93,9 @@ public class GTADatLoader
             Debug.Log($"Total ide:{ideFiles.Count}");
         });
 
-        // Initialize comprehensive hash resolver with all game data
         IVUnity.ComprehensiveHashResolver.Initialize(this);
         Debug.Log($"Total hashes: {IVUnity.ComprehensiveHashResolver.GetKnownHashCount()}");
-
-
+        
         await Task.Run(() =>
         {
             List<FSObject> wplFiles = new List<FSObject>();
@@ -119,37 +107,31 @@ public class GTADatLoader
 
 
             iplLoader = new IPLLoader();
+            ipl.Clear();
+            
+            LoadingScreen.SetupLoadingTarget(localWPLFiles.Count);
 
             foreach (var wplFile in localWPLFiles)
             {
                 byte[] stream = System.IO.File.ReadAllBytes(wplFile);
+                LoadingScreen.AdvanceProgress(wplFile);
                 iplLoader.LoadIPL(Path.GetFileName(wplFile), stream);
             }
-
-            //ipl = actualWPLFiles;
-
-            //This actually loads the streaming WPL files
-
-            ipl.Clear();
+            
+            LoadingScreen.ResetProgress();
 
             LoadingScreen.SetupLoadingTarget(wplFiles.Count);
 
             foreach (File wplFile in wplFiles)
             {
-                //if (wplFile.Name.Contains("bronx")) Load Only Bronx Area
-                // {
                 LoadingScreen.AdvanceProgress(wplFile.Name);
                 ipl.Add(wplFile.Name);
                 iplLoader.LoadIPL(wplFile.Name, wplFile.GetData());
-                // }
             }
 
 
             LoadingScreen.ResetProgress();
-
-            //iplLoader = new IPLLoader();
-
-
+            
             Debug.Log($"Loaded {ipl.Count} WPL files...");
         });
 

@@ -64,8 +64,12 @@ public class RageMaterial
     }
 
     public RageUnityTexture mainTex;
+    public RageUnityTexture normalTex;
+    public RageUnityTexture specularTex;
     public string shaderName;
     public string textureName;
+    public string normalTextureName;
+    public string specularTextureName;
 }
 
 [System.Serializable]

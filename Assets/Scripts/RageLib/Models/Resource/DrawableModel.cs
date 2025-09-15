@@ -32,7 +32,7 @@ using RageLib.Textures;
 namespace RageLib.Models.Resource
 {
     // gtaDrawable : rmcDrawable : rmcDrawableBase
-    class DrawableModel : PGBase, IFileAccess, IDataReader, IEmbeddedResourceReader, IDisposable
+    public class DrawableModel : PGBase, IFileAccess, IDataReader, IEmbeddedResourceReader, IDisposable
     {
         public ShaderGroup ShaderGroup { get; set; }
         public Skeleton Skeleton { get; private set; }
@@ -45,20 +45,24 @@ namespace RageLib.Models.Resource
 
         public Vector4 AbsoluteMax { get; private set; }
 
-        private uint Unk1 { get; set; }     // either 1 or 9
+        // LOD group and model properties
+        private uint LodGroupFlags { get; set; }     // LOD flags, often 1 or 9
         
-        private uint Neg1 { get; set; }
-        private uint Neg2 { get; set; }
-        private uint Neg3 { get; set; }
+        // These are typically -1 (0xFFFFFFFF) when unused
+        private uint JointDataOffset { get; set; }    // Joint constraint data pointer (usually -1)
+        private uint Reserved1 { get; set; }           // Reserved/padding field (usually -1)
+        private uint Reserved2 { get; set; }           // Reserved/padding field (usually -1)
 
-        private float Unk2 { get; set; }
+        private float LodDistanceHigh { get; set; }    // LOD switching distance threshold
 
-        private uint Unk3 { get; set; }
-        private uint Unk4 { get; set; }
-        private uint Unk5 { get; set; }
+        // Handle and container information
+        private uint HandleIndex { get; set; }         // Resource handle index
+        private uint ContainerSize { get; set; }       // Container size in quadwords
+        private uint ContainerType { get; set; }       // Container type identifier
 
-        private uint Unk6 { get; set; }  // This should be a CSimpleCollection
-        private uint Unk7 { get; set; }
+        // Light attributes collection (CSimpleCollection<LightAttrs>)
+        private uint LightAttrsPointer { get; set; }   // Pointer to light attributes
+        private uint LightAttrsCount { get; set; }     // Number of light attributes
 
         public void ReadData(BinaryReader br)
         {
@@ -105,21 +109,21 @@ namespace RageLib.Models.Resource
 
             AbsoluteMax = new Vector4(br);
 
-            Unk1 = br.ReadUInt32();
+            LodGroupFlags = br.ReadUInt32();
 
-            Neg1 = br.ReadUInt32();
-            Neg2 = br.ReadUInt32();
-            Neg3 = br.ReadUInt32();
+            JointDataOffset = br.ReadUInt32();
+            Reserved1 = br.ReadUInt32();
+            Reserved2 = br.ReadUInt32();
 
-            Unk2 = br.ReadSingle();
+            LodDistanceHigh = br.ReadSingle();
 
-            Unk3 = br.ReadUInt32();
-            Unk4 = br.ReadUInt32();
-            Unk5 = br.ReadUInt32();
+            HandleIndex = br.ReadUInt32();
+            ContainerSize = br.ReadUInt32();
+            ContainerType = br.ReadUInt32();
 
             // Collection<LightAttrs>
-            Unk6 = br.ReadUInt32();
-            Unk7 = br.ReadUInt32();
+            LightAttrsPointer = br.ReadUInt32();
+            LightAttrsCount = br.ReadUInt32();
 
             // The data follows:
 

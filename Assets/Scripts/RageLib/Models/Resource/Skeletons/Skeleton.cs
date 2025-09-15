@@ -27,7 +27,7 @@ using RageLib.Common.ResourceTypes;
 namespace RageLib.Models.Resource.Skeletons
 {
     // rageSkeleton (real name unknown)
-    class Skeleton : IFileAccess
+    public class Skeleton : IFileAccess
     {
         class SubStruct : DATBase, IFileAccess
         {

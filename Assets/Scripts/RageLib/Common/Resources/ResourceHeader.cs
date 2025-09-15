@@ -47,12 +47,29 @@ namespace RageLib.Common.Resources
 
         public int GetSystemMemSize()
         {
-            return (int)(Flags & 0x7FF) << (int)(((Flags >> 11) & 0xF) + 8);
+            // Optimized bit operations
+            int baseSize = (int)(Flags & 0x7FF);
+            int shift = (int)(((Flags >> 11) & 0xF) + 8);
+            return baseSize << shift;
         }
 
         public int GetGraphicsMemSize()
         {
-            return (int)((Flags >> 15) & 0x7FF) << (int)(((Flags >> 26) & 0xF) + 8);
+            // Optimized bit operations
+            int baseSize = (int)((Flags >> 15) & 0x7FF);
+            int shift = (int)(((Flags >> 26) & 0xF) + 8);
+            return baseSize << shift;
+        }
+        
+        // Cache total size calculation for performance
+        private int? _cachedTotalSize;
+        public int GetTotalMemSize()
+        {
+            if (!_cachedTotalSize.HasValue)
+            {
+                _cachedTotalSize = GetSystemMemSize() + GetGraphicsMemSize();
+            }
+            return _cachedTotalSize.Value;
         }
 
         public void SetMemSizes(int systemMemSize, int graphicsMemSize)

@@ -20,7 +20,7 @@
 
 namespace RageLib.Models.Resource.Models
 {
-    internal struct VertexElement
+    public struct VertexElement
     {
         public int StreamIndex;
         public VertexElementUsage Usage;

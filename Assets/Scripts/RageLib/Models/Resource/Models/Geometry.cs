@@ -25,26 +25,34 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
-    internal class Geometry : DATBase, IFileAccess
+    public class Geometry : DATBase, IFileAccess
     {
-        private uint Unknown1 { get; set; }
-        private uint Unknown2 { get; set; }
-        private uint Unknown3 { get; set; }
-        private uint Unknown4 { get; set; }
-        private uint Unknown5 { get; set; }
-        private uint Unknown6 { get; set; }
-        private uint Unknown7 { get; set; }
-        private uint Unknown8 { get; set; }
-        public uint IndexCount { get; private set; }
-        public uint FaceCount { get; private set; }
-        public ushort VertexCount { get; private set; }
-        public ushort PrimitiveType { get; private set; }	// RAGE_PRIMITIVE_TYPE
-        private uint Unknown9 { get; set; }
-        public ushort VertexStride { get; private set; }
-        private ushort Unknown10 { get; set; }
-        private uint Unknown11 { get; set; }
-        private uint Unknown12 { get; set; }
-        private uint Unknown13 { get; set; }
+        // grmGeometry/grmGeometryQB fields
+        private uint Flags { get; set; }                   // Geometry flags
+        private uint BoneIds { get; set; }                 // Packed bone IDs for skinning
+        
+        // Vertex buffer info (follows pointer)
+        private uint VertexBufferUnk1 { get; set; }        // Vertex buffer related field
+        private uint VertexBufferUnk2 { get; set; }        // Vertex buffer related field
+        private uint VertexBufferUnk3 { get; set; }        // Vertex buffer related field
+        
+        // Index buffer info (follows pointer)
+        private uint IndexBufferUnk1 { get; set; }         // Index buffer related field
+        private uint IndexBufferUnk2 { get; set; }         // Index buffer related field
+        private uint IndexBufferUnk3 { get; set; }         // Index buffer related field
+        
+        public uint IndexCount { get; private set; }       // Total number of indices
+        public uint FaceCount { get; private set; }        // Number of triangles/faces
+        public ushort VertexCount { get; private set; }    // Number of vertices
+        public ushort PrimitiveType { get; private set; }  // RAGE_PRIMITIVE_TYPE (triangles, strips, etc.)
+        
+        private uint VertexDeclaration { get; set; }       // Vertex format declaration
+        public ushort VertexStride { get; private set; }   // Size of each vertex in bytes
+        private ushort BoneCount { get; set; }             // Number of bones affecting this geometry
+        
+        private uint MaterialId { get; set; }              // Material/shader ID
+        private uint DrawBucket { get; set; }              // Render bucket for sorting
+        private uint Reserved { get; set; }                // Reserved/padding
 
         public VertexBuffer VertexBuffer { get; set; }
         public IndexBuffer IndexBuffer { get; set; }
@@ -55,32 +63,32 @@ namespace RageLib.Models.Resource.Models
         {
             base.Read(br);
 
-            Unknown1 = br.ReadUInt32();
-            Unknown2 = br.ReadUInt32();
+            Flags = br.ReadUInt32();
+            BoneIds = br.ReadUInt32();
 
             var vertexBuffersOffset = ResourceUtil.ReadOffset(br);
-            Unknown3 = br.ReadUInt32();
-            Unknown4 = br.ReadUInt32();
-            Unknown5 = br.ReadUInt32();
+            VertexBufferUnk1 = br.ReadUInt32();
+            VertexBufferUnk2 = br.ReadUInt32();
+            VertexBufferUnk3 = br.ReadUInt32();
 
             var indexBuffersOffset = ResourceUtil.ReadOffset(br);
-            Unknown6 = br.ReadUInt32();
-            Unknown7 = br.ReadUInt32();
-            Unknown8 = br.ReadUInt32();
+            IndexBufferUnk1 = br.ReadUInt32();
+            IndexBufferUnk2 = br.ReadUInt32();
+            IndexBufferUnk3 = br.ReadUInt32();
 
             IndexCount = br.ReadUInt32();
             FaceCount = br.ReadUInt32();
             VertexCount = br.ReadUInt16();
             PrimitiveType = br.ReadUInt16();
 
-            Unknown9 = br.ReadUInt32();
+            VertexDeclaration = br.ReadUInt32();
 
             VertexStride = br.ReadUInt16();
-            Unknown10 = br.ReadUInt16();
+            BoneCount = br.ReadUInt16();
 
-            Unknown11 = br.ReadUInt32();
-            Unknown12 = br.ReadUInt32();
-            Unknown13 = br.ReadUInt32();
+            MaterialId = br.ReadUInt32();
+            DrawBucket = br.ReadUInt32();
+            Reserved = br.ReadUInt32();
 
             // Data
 

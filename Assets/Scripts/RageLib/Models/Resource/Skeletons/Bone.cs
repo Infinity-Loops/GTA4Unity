@@ -26,7 +26,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Skeletons
 {
-    internal class Bone : IFileAccess
+    public class Bone : IFileAccess
     {
         public Bone Parent { get; set; }
         public Bone NextSibling { get; set; }

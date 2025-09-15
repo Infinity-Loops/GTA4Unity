@@ -27,7 +27,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Shaders
 {
-    internal class Shader : PGBase, IFileAccess
+    public class Shader : PGBase, IFileAccess
     {
         private ushort Unknown1 { get; set; }
         private byte Unknown2 { get; set; }

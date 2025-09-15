@@ -25,7 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
-    internal class VertexBuffer : DATBase, IFileAccess
+    public class VertexBuffer : DATBase, IFileAccess
     {
         public ushort VertexCount { get; private set; }
         private ushort Unknown1 { get; set; }               // byte bLocked, byte align

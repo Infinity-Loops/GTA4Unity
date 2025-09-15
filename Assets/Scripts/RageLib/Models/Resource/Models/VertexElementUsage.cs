@@ -20,7 +20,7 @@
 
 namespace RageLib.Models.Resource.Models
 {
-    internal enum VertexElementUsage
+    public enum VertexElementUsage
     {
         Position = 0,
         PositionT = 1,

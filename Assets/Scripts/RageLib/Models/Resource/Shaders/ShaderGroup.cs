@@ -27,19 +27,23 @@ using RageLib.Textures;
 
 namespace RageLib.Models.Resource.Shaders
 {
-    /// grmShaderGroup 
-    class ShaderGroup : DATBase, IFileAccess
+    /// grmShaderGroup - Contains all shaders and textures for a drawable
+    public class ShaderGroup : DATBase, IFileAccess
     {
         public uint TextureDictionaryOffset { get; private set; }
         public TextureFile TextureDictionary { get; set; }
 
         public PtrCollection<ShaderFx> Shaders { get; private set; }
 
-        private SimpleArray<uint> Zeros { get; set; }
+        // Shader indices for different render passes
+        // Each uint corresponds to a shader index for specific rendering scenarios
+        private SimpleArray<uint> ShaderIndices { get; set; }  // 12 shader indices for different passes
 
+        // Vertex declaration usage flags - defines which vertex attributes are used
         private SimpleCollection<uint> VertexDeclarationUsageFlags { get; set; }
 
-        private SimpleCollection<uint> Data3 { get; set; }
+        // Shader technique indices - maps to specific rendering techniques
+        private SimpleCollection<uint> TechniqueIndices { get; set; }
 
         public ShaderGroup()
         {
@@ -61,11 +65,11 @@ namespace RageLib.Models.Resource.Shaders
             // CPtrCollection<T>
             Shaders = new PtrCollection<ShaderFx>(br);
 
-            Zeros = new SimpleArray<uint>(br, 12, r => r.ReadUInt32());
+            ShaderIndices = new SimpleArray<uint>(br, 12, r => r.ReadUInt32());
 
             VertexDeclarationUsageFlags = new SimpleCollection<uint>(br, reader => reader.ReadUInt32());
 
-            Data3 = new SimpleCollection<uint>(br, reader => reader.ReadUInt32());
+            TechniqueIndices = new SimpleCollection<uint>(br, reader => reader.ReadUInt32());
         }
 
         public new void Write(BinaryWriter bw)

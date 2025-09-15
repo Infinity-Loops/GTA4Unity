@@ -20,7 +20,7 @@
 
 namespace RageLib.Models.Resource.Models
 {
-    internal enum VertexElementType
+    public enum VertexElementType
     {
         Float16_1 = 0,
         Float16_2 = 1,

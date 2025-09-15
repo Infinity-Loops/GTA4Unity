@@ -935,8 +935,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c089106e06095894a83f8ff9952470c8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IVUnity.HighPerformanceLoader
-  maxParallelFileLoads: 4
-  maxParallelMeshJobs: 8
+  maxParallelFileLoads: 8
+  maxParallelMeshJobs: 16
   batchSize: 50
   maxLoadTimePerFrame: 8
   streamDistance: 300
@@ -1459,8 +1459,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0.2588186, z: -0, w: 0.965926}
-  m_LocalPosition: {x: 0, y: 23.6, z: 0}
+  m_LocalRotation: {x: 0.04369314, y: 0.22587015, z: 0.008853304, w: -0.9731368}
+  m_LocalPosition: {x: -19.748995, y: 16.306917, z: 280.80865}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2002,13 +2002,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1972989645}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 23.6, z: 0}
+  m_LocalRotation: {x: 0.011076584, y: -0.97664285, z: -0.060046554, w: -0.20601094}
+  m_LocalPosition: {x: 18.632692, y: 16.901253, z: 252.87314}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: -30, z: 0}
 --- !u!1 &2000304775
 GameObject:
   m_ObjectHideFlags: 0

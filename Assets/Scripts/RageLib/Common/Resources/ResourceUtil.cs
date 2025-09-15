@@ -44,52 +44,42 @@ namespace RageLib.Common.Resources
 
         public static uint ReadOffset(BinaryReader br)
         {
-            uint value;
+            if (!br.CanReadMoreData())
+                return 0;
 
-            if (br.CanReadMoreData())
+            uint offset = br.ReadUInt32();
+            
+            if (offset == 0)
+                return 0;
+            
+            // Virtual offset marker for RSC5 is 0x5 in upper nibble
+            uint marker = offset >> 28;
+            if (marker != 5)
             {
-                uint offset = br.ReadUInt32();
-
-                if (offset == 0)
-                {
-                    value = 0;
-                }
-                else
-                {
-                    if (offset >> 28 != 5)
-                    {
-                        value = 0;
-                    }
-                    value = offset & 0x0fffffff;
-                }
+                // Log warning for debugging but don't throw - maintain compatibility
+                System.Diagnostics.Debug.WriteLine($"Warning: Expected virtual offset marker 0x5, got 0x{marker:X}");
+                return 0;
             }
-            else
-            {
-                value = 0;
-            }
-
-            return value;
+            
+            // Mask out the marker bits to get actual offset
+            return offset & 0x0FFFFFFF;
         }
 
         public static uint ReadDataOffset(BinaryReader br)
         {
-            uint value;
             uint offset = br.ReadUInt32();
 
             if (offset == 0)
-            {
-                value = 0;
-            }
-            else
-            {
-                if (offset >> 28 != 6)
-                {
-                    throw new Exception("Expected a data offset.");
-                }
-                value = offset & 0x0fffffff;
-            }
+                return 0;
 
-            return value;
+            // Physical/data offset marker for RSC5 is 0x6 in upper nibble
+            uint marker = offset >> 28;
+            if (marker != 6)
+            {
+                throw new Exception($"Expected a data offset marker 0x6, got 0x{marker:X} at position {br.BaseStream.Position - 4}");
+            }
+            
+            return offset & 0x0FFFFFFF;
         }
 
         public static uint ReadDataOffset(BinaryReader br, uint mask, out uint lowerBits)
@@ -127,6 +117,46 @@ namespace RageLib.Common.Resources
             }
 
             return sb.ToString();
+        }
+        
+        // Optimized string reading with length hint
+        public static string ReadNullTerminatedString(BinaryReader br, int maxLength)
+        {
+            var sb = new StringBuilder(Math.Min(maxLength, 256));
+            int count = 0;
+            
+            while (count < maxLength)
+            {
+                byte b = br.ReadByte();
+                if (b == 0)
+                    break;
+                    
+                sb.Append((char)b);
+                count++;
+            }
+            
+            return sb.ToString();
+        }
+        
+        // Fast offset validation without exceptions for performance
+        public static bool IsValidOffset(uint offset, uint expectedMarker)
+        {
+            if (offset == 0)
+                return true;
+                
+            uint marker = offset >> 28;
+            return marker == expectedMarker;
+        }
+        
+        // Batch read optimization for multiple offsets
+        public static uint[] ReadOffsets(BinaryReader br, int count)
+        {
+            uint[] offsets = new uint[count];
+            for (int i = 0; i < count; i++)
+            {
+                offsets[i] = ReadOffset(br);
+            }
+            return offsets;
         }
 
     }

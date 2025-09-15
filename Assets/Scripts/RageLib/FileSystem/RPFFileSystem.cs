@@ -33,6 +33,10 @@ namespace RageLib.FileSystem
     public class RPFFileSystem : Common.FileSystem
     {
         private static readonly Dictionary<uint, string> _knownFilenames;
+        
+        // Cache for frequently accessed entries
+        private static readonly Dictionary<string, WeakReference> _entryCache = new Dictionary<string, WeakReference>();
+        private const int MaxCacheEntries = 256;
 
         private File _rpfFile;
 
@@ -42,17 +46,37 @@ namespace RageLib.FileSystem
         static RPFFileSystem()
         {
             _knownFilenames = new Dictionary<uint, string>();
-            using (var sw = System.IO.File.OpenText($"{Application.streamingAssetsPath}/KnownFilenames.txt"))
+            string knownFilesPath = $"{Application.streamingAssetsPath}/KnownFilenames.txt";
+            
+            // Check if file exists before trying to open
+            if (System.IO.File.Exists(knownFilesPath))
             {
-                string name;
-                while ((name = sw.ReadLine()) != null)
+                try
                 {
-                    uint hash = Hasher.Hash(name);
-                    if (!_knownFilenames.ContainsKey(hash))
+                    using (var sw = System.IO.File.OpenText(knownFilesPath))
                     {
-                        _knownFilenames.Add(hash, name);
+                        string name;
+                        while ((name = sw.ReadLine()) != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(name))
+                                continue;
+                                
+                            uint hash = Hasher.Hash(name);
+                            if (!_knownFilenames.ContainsKey(hash))
+                            {
+                                _knownFilenames.Add(hash, name);
+                            }
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"Failed to load known filenames: {ex.Message}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"KnownFilenames.txt not found at {knownFilesPath}");
             }
         }
 

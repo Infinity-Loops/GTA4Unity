@@ -58,8 +58,8 @@ namespace IVUnity
         
         public static async Task Initialize(GTADatLoader dataLoader)
         {
-            Debug.Log("Initializing Material/Texture Resolver - Optimized parallel caching...");
-            Debug.Log($"Using {Environment.ProcessorCount} CPU cores with enhanced parallelization");
+            //Debug.Log("Initializing Material/Texture Resolver - Optimized parallel caching...");
+            //Debug.Log($"Using {Environment.ProcessorCount} CPU cores with enhanced parallelization");
             
             var startTime = System.DateTime.Now;
             int workerThreads = Environment.ProcessorCount * 4;
@@ -77,22 +77,22 @@ namespace IVUnity
                 }
             }
             
-            Debug.Log($"Found {wtdFiles.Count} texture dictionary files to index");
-            Debug.Log("Phase 1: Loading ALL texture references into memory...");
+            //Debug.Log($"Found {wtdFiles.Count} texture dictionary files to index");
+            //Debug.Log("Phase 1: Loading ALL texture references into memory...");
             await Task.Run(() => ProcessTexturesOptimized(wtdFiles));
-            Debug.Log("Phase 2: Building complete material index with resolved textures...");
+            //Debug.Log("Phase 2: Building complete material index with resolved textures...");
             await BuildCompleteMaterialIndex(allFiles);
             
             var elapsed = (System.DateTime.Now - startTime).TotalSeconds;
             int embeddedCount = textureReferences.Values.Count(t => t.IsEmbedded);
             int externalCount = textureReferences.Count - embeddedCount;
             
-            Debug.Log($"Texture Resolver initialized in {elapsed:F2} seconds");
-            Debug.Log($"  - Indexed {textureReferences.Count} total texture references");
-            Debug.Log($"    - {externalCount} from .wtd files");
-            Debug.Log($"    - {embeddedCount} embedded in models");
-            Debug.Log($"  - Resolved {materialIndex.Count} complete material definitions");
-            Debug.Log($"  - Ready for on-demand material creation with proper sharing");
+            //Debug.Log($"Texture Resolver initialized in {elapsed:F2} seconds");
+            //Debug.Log($"  - Indexed {textureReferences.Count} total texture references");
+            //Debug.Log($"    - {externalCount} from .wtd files");
+            //Debug.Log($"    - {embeddedCount} embedded in models");
+            //Debug.Log($"  - Resolved {materialIndex.Count} complete material definitions");
+            //Debug.Log($"  - Ready for on-demand material creation with proper sharing");
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -113,7 +113,7 @@ namespace IVUnity
                 }
             }
             
-            Debug.Log($"Scanning {modelFiles.Count} model files for material-texture mappings...");
+            //Debug.Log($"Scanning {modelFiles.Count} model files for material-texture mappings...");
             
             var processedCount = 0;
             var materialCount = 0;
@@ -173,12 +173,12 @@ namespace IVUnity
                                         if (textureReferences.TryAdd(texKey, reference))
                                         {
                                             hasEmbeddedTextures = true;
-                                            Debug.Log($"Cached embedded texture reference '{texture.Name}' from {kvp.Key}");
+                                            //Debug.Log($"Cached embedded texture reference '{texture.Name}' from {kvp.Key}");
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Debug.LogWarning($"Failed to cache embedded texture '{texture.Name}': {ex.Message}");
+                                        //Debug.LogWarning($"Failed to cache embedded texture '{texture.Name}': {ex.Message}");
                                     }
                                 }
                             }
@@ -205,12 +205,12 @@ namespace IVUnity
                                         if (textureReferences.TryAdd(texKey, reference))
                                         {
                                             hasEmbeddedTextures = true;
-                                            Debug.Log($"Cached embedded texture reference '{texture.Name}' from fragment {kvp.Key}");
+                                            //Debug.Log($"Cached embedded texture reference '{texture.Name}' from fragment {kvp.Key}");
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Debug.LogWarning($"Failed to cache embedded texture '{texture.Name}': {ex.Message}");
+                                        //Debug.LogWarning($"Failed to cache embedded texture '{texture.Name}': {ex.Message}");
                                     }
                                 }
                             }
@@ -226,13 +226,13 @@ namespace IVUnity
                         }
                         else
                         {
-                            Debug.Log($"Keeping model {kvp.Key} in memory due to embedded textures");
+                            //Debug.Log($"Keeping model {kvp.Key} in memory due to embedded textures");
                         }
                         
                         var current = System.Threading.Interlocked.Increment(ref processedCount);
                         if (current % 500 == 0)
                         {
-                            Debug.Log($"Processed {current}/{modelFiles.Count} models...");
+                            //Debug.Log($"Processed {current}/{modelFiles.Count} models...");
                         }
                     }
                     catch
@@ -242,7 +242,7 @@ namespace IVUnity
                 });
             });
             
-            Debug.Log($"Material index complete: {processedCount} models processed, {materialIndex.Count} resolved materials");
+            //Debug.Log($"Material index complete: {processedCount} models processed, {materialIndex.Count} resolved materials");
         }
         
         private static void ExtractAndResolveMaterials(ModelNode node, string modelName)
@@ -273,7 +273,7 @@ namespace IVUnity
                         
                         if (newHasResolvedTexture && !existingHasResolvedTexture)
                         {
-                            Debug.Log($"Updated material {materialKey} with resolved texture from {modelName} (replacing {existing.SourceModel})");
+                            //Debug.Log($"Updated material {materialKey} with resolved texture from {modelName} (replacing {existing.SourceModel})");
                             return def;
                         }
                         else if (!newHasResolvedTexture && existingHasResolvedTexture)
@@ -288,7 +288,7 @@ namespace IVUnity
                         {
                             if (!string.IsNullOrEmpty(def.TextureName) && string.IsNullOrEmpty(existing.TextureName))
                             {
-                                Debug.Log($"Updated material {materialKey} with texture name from {modelName}");
+                                //Debug.Log($"Updated material {materialKey} with texture name from {modelName}");
                                 return def;
                             }
                             return existing;
@@ -315,7 +315,7 @@ namespace IVUnity
                 }
                 else
                 {
-                    Debug.LogWarning($"Found texture reference for '{textureName}' but RageTexture is null");
+                    //Debug.LogWarning($"Found texture reference for '{textureName}' but RageTexture is null");
                 }
             }
             string[] variations = { key + "_diff", key.Replace("_diff", ""), key + "_d", key.Replace("_d", "") };
@@ -325,18 +325,18 @@ namespace IVUnity
                 {
                     if (varRef != null && varRef.RageTexture != null)
                     {
-                        Debug.Log($"Found texture '{textureName}' as variation '{variation}'");
+                        //Debug.Log($"Found texture '{textureName}' as variation '{variation}'");
                         return varRef;
                     }
                 }
             }
-            Debug.LogWarning($"Could not resolve texture '{textureName}' - not found in any texture dictionary");
+            //Debug.LogWarning($"Could not resolve texture '{textureName}' - not found in any texture dictionary");
             return null;
         }
         
         private static void ProcessTexturesOptimized(List<KeyValuePair<string, File>> wtdFiles)
         {
-            Debug.Log($"Processing {wtdFiles.Count} texture files with optimized batching...");
+            //Debug.Log($"Processing {wtdFiles.Count} texture files with optimized batching...");
             
             var processedCount = 0;
             var lastReportTime = DateTime.Now;
@@ -383,22 +383,22 @@ namespace IVUnity
                     var current = System.Threading.Interlocked.Increment(ref processedCount);
                     if (current % 100 == 0)
                     {
-                        Debug.Log($"Processed {current}/{wtdFiles.Count} texture files...");
+                        //Debug.Log($"Processed {current}/{wtdFiles.Count} texture files...");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"Failed to process {kvp.Key}: {ex.Message}");
+                    //Debug.LogWarning($"Failed to process {kvp.Key}: {ex.Message}");
                 }
             });
             
-            Debug.Log($"Completed processing {processedCount} texture files");
+            //Debug.Log($"Completed processing {processedCount} texture files");
         }
         
         
         private static void ProcessFileInBackground(List<KeyValuePair<string, File>> modelFiles)
         {
-            Debug.Log($"Processing {modelFiles.Count} model files with optimized batching...");
+            //Debug.Log($"Processing {modelFiles.Count} model files with optimized batching...");
             
             var processedCount = 0;
             
@@ -476,7 +476,7 @@ namespace IVUnity
                     var current = System.Threading.Interlocked.Increment(ref processedCount);
                     if (current % 500 == 0)
                     {
-                        Debug.Log($"Processed {current}/{modelFiles.Count} model files...");
+                        //Debug.Log($"Processed {current}/{modelFiles.Count} model files...");
                     }
                 }
                 catch (Exception ex)
@@ -484,7 +484,7 @@ namespace IVUnity
                 }
             });
             
-            Debug.Log($"Completed processing {processedCount} model files");
+            //Debug.Log($"Completed processing {processedCount} model files");
         }
         
   
@@ -545,7 +545,7 @@ namespace IVUnity
             string key = textureName.ToLower();
             if (loadedTextures.TryGetValue(key, out Texture2D loaded))
             {
-                Debug.Log($"Using pre-loaded texture: {textureName}");
+                //Debug.Log($"Using pre-loaded texture: {textureName}");
                 return loaded;
             }
             if (textureReferences.TryGetValue(key, out TextureReference reference))
@@ -559,20 +559,20 @@ namespace IVUnity
                         if (unityTexture != null)
                         {
                             loadedTextures.TryAdd(key, unityTexture);
-                            Debug.Log($"Loaded texture on-demand: {textureName} from {reference.SourceFile} (embedded: {reference.IsEmbedded})");
+                            //Debug.Log($"Loaded texture on-demand: {textureName} from {reference.SourceFile} (embedded: {reference.IsEmbedded})");
                             return unityTexture;
                         }
                     }
                     else
                     {
-                        Debug.LogWarning($"Invalid texture reference for '{textureName}' - RageTexture is null");
+                        //Debug.LogWarning($"Invalid texture reference for '{textureName}' - RageTexture is null");
                         textureReferences.TryRemove(key, out _);
                         return null;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"Failed to create texture {textureName}: {ex.Message}");
+                    //Debug.LogWarning($"Failed to create texture {textureName}: {ex.Message}");
                 }
             }
             else
@@ -596,14 +596,14 @@ namespace IVUnity
                             if (unityTexture != null)
                             {
                                 loadedTextures.TryAdd(key, unityTexture);
-                                Debug.Log($"Loaded texture with variation: {textureName} -> {variation} from {varRef.SourceFile}");
+                                //Debug.Log($"Loaded texture with variation: {textureName} -> {variation} from {varRef.SourceFile}");
                                 return unityTexture;
                             }
                         }
                         catch { }
                     }
                 }
-                Debug.LogWarning($"Texture not found in any form: {textureName} (Checked {textureReferences.Count} references)");
+                //Debug.LogWarning($"Texture not found in any form: {textureName} (Checked {textureReferences.Count} references)");
             }
             
             return null;
@@ -634,7 +634,7 @@ namespace IVUnity
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"Failed to scan model {modelName} for materials: {ex.Message}");
+                //Debug.LogWarning($"Failed to scan model {modelName} for materials: {ex.Message}");
             }
         }
         
@@ -666,35 +666,44 @@ namespace IVUnity
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"Failed to register texture reference {textureName}: {ex.Message}");
+                //Debug.LogWarning($"Failed to register texture reference {textureName}: {ex.Message}");
             }
         }
         
-        private static string GetMaterialKey(string shaderName, string textureName)
+        private static string GetMaterialKey(string shaderName, string textureName, string normalTexName = null, string specularTexName = null)
         {
-            // Use texture name as the primary key for material sharing
-            // This ensures all materials using the same texture share the same Unity material
-            // IMPORTANT: Normalize to lowercase to prevent case-sensitivity issues
+            // Create a unique key that includes all texture types to prevent incorrect material sharing
+            // Materials should only be shared if they have the exact same shader and texture combination
             
-            // If no texture name, use shader name as fallback
-            if (string.IsNullOrEmpty(textureName))
+            string key = shaderName?.ToLower() ?? "default";
+            
+            if (!string.IsNullOrEmpty(textureName))
             {
-                // For untextured materials, group by shader
-                return $"notex_{shaderName?.ToLower() ?? "default"}";
+                key += $"_d{textureName.ToLower()}";
             }
             
-            // Use only texture name as key - all materials with same texture should share
-            // This fixes the issue where different shaders with same texture weren't sharing
-            return textureName.ToLower();
+            if (!string.IsNullOrEmpty(normalTexName))
+            {
+                key += $"_n{normalTexName.ToLower()}";
+            }
+            
+            if (!string.IsNullOrEmpty(specularTexName))
+            {
+                key += $"_s{specularTexName.ToLower()}";
+            }
+            
+            return key;
         }
 
         
         /// <summary>
         /// Get or create a shared Unity Material using the pre-resolved material index
         /// </summary>
-        public static Material GetOrCreateSharedMaterial(string shaderName, string textureName, Texture2D embeddedTexture = null)
+        public static Material GetOrCreateSharedMaterial(string shaderName, string textureName, Texture2D embeddedTexture = null, 
+            string normalTextureName = null, Texture2D embeddedNormalTexture = null, 
+            string specularTextureName = null, Texture2D embeddedSpecularTexture = null)
         {
-            string materialKey = GetMaterialKey(shaderName, textureName);
+            string materialKey = GetMaterialKey(shaderName, textureName, normalTextureName, specularTextureName);
             
             if (sharedMaterials.TryGetValue(materialKey, out Material existingMaterial))
             {
@@ -711,15 +720,15 @@ namespace IVUnity
                 MaterialDefinition materialDef = null;
                 if (materialIndex.TryGetValue(materialKey, out materialDef))
                 {
-                    Debug.Log($"Using indexed material: {materialKey} from {materialDef.SourceModel}");
+                    //Debug.Log($"Using indexed material: {materialKey} from {materialDef.SourceModel}");
                     
                     if (materialDef.ResolvedTexture == null && materialDef.HasTexture)
                     {
-                        Debug.LogWarning($"Material {materialKey} expects texture '{materialDef.TextureName}' but ResolvedTexture is null");
+                        //Debug.LogWarning($"Material {materialKey} expects texture '{materialDef.TextureName}' but ResolvedTexture is null");
                         materialDef.ResolvedTexture = TryResolveTexture(materialDef.TextureName);
                         if (materialDef.ResolvedTexture != null)
                         {
-                            Debug.Log($"Successfully resolved texture '{materialDef.TextureName}' on second attempt");
+                            //Debug.Log($"Successfully resolved texture '{materialDef.TextureName}' on second attempt");
                         }
                     }
                 }
@@ -733,7 +742,7 @@ namespace IVUnity
                         HasTexture = embeddedTexture != null || !string.IsNullOrEmpty(textureName),
                         ResolvedTexture = TryResolveTexture(textureName)
                     };
-                    Debug.Log($"Created runtime material definition for {materialKey}, HasTexture: {materialDef.HasTexture}, Resolved: {materialDef.ResolvedTexture != null}");
+                    //Debug.Log($"Created runtime material definition for {materialKey}, HasTexture: {materialDef.HasTexture}, Resolved: {materialDef.ResolvedTexture != null}");
                 }
                 
                 Material unityMaterial;
@@ -745,7 +754,7 @@ namespace IVUnity
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogError($"Failed to create material '{materialKey}': {ex.Message}");
+                    //Debug.LogError($"Failed to create material '{materialKey}': {ex.Message}");
                     return null;
                 }
                 
@@ -767,17 +776,49 @@ namespace IVUnity
                 if (finalTexture != null)
                 {
                     unityMaterial.SetTexture("_MainTex", finalTexture);
-                    Debug.Log($"Material '{materialKey}' created with texture");
+                    //Debug.Log($"Material '{materialKey}' created with texture");
                 }
                 else if (materialDef.HasTexture)
                 {
-                    Debug.LogWarning($"Material '{materialKey}' expects texture '{materialDef.TextureName}' but none could be loaded. ResolvedTexture exists: {materialDef.ResolvedTexture != null}");
+                    //Debug.LogWarning($"Material '{materialKey}' expects texture '{materialDef.TextureName}' but none could be loaded. ResolvedTexture exists: {materialDef.ResolvedTexture != null}");
                     
                     var similarKeys = textureReferences.Keys.Where(k => k.Contains(materialKey.Replace("_", ""))).Take(5).ToList();
                     if (similarKeys.Any())
                     {
-                        Debug.Log($"Similar textures found: {string.Join(", ", similarKeys)}");
+                        //Debug.Log($"Similar textures found: {string.Join(", ", similarKeys)}");
                     }
+                }
+                
+                // Apply normal texture if available
+                Texture2D normalTexture = null;
+                if (embeddedNormalTexture != null)
+                {
+                    normalTexture = embeddedNormalTexture;
+                }
+                else if (!string.IsNullOrEmpty(normalTextureName))
+                {
+                    normalTexture = GetOrCreateTexture(normalTextureName);
+                }
+                
+                if (normalTexture != null)
+                {
+                    unityMaterial.SetTexture("_BumpMap", normalTexture);
+                }
+                
+                // Apply specular texture if available
+                Texture2D specularTexture = null;
+                if (embeddedSpecularTexture != null)
+                {
+                    specularTexture = embeddedSpecularTexture;
+                }
+                else if (!string.IsNullOrEmpty(specularTextureName))
+                {
+                    specularTexture = GetOrCreateTexture(specularTextureName);
+                }
+                
+                if (specularTexture != null)
+                {
+                    unityMaterial.SetTexture("_SpecGlossMap", specularTexture);
                 }
                 
                 sharedMaterials.TryAdd(materialKey, unityMaterial);
@@ -794,12 +835,12 @@ namespace IVUnity
             if (!sharedMaterials.ContainsKey(materialKey))
             {
                 sharedMaterials.TryAdd(materialKey, material);
-                Debug.Log($"Registered shared material: {materialKey}");
+                //Debug.Log($"Registered shared material: {materialKey}");
             }
             else if (material.mainTexture != null)
             {
                 sharedMaterials[materialKey] = material;
-                Debug.Log($"Updated shared material with texture: {materialKey}");
+                //Debug.Log($"Updated shared material with texture: {materialKey}");
             }
         }
     }
