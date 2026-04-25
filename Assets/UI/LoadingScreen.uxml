@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:VisualElement name="loading-root" class="loading-root">
+        <ui:VisualElement name="background" class="background" />
+        <ui:VisualElement name="character" class="character" />
+        <ui:VisualElement class="bottom-bar">
+            <ui:Label name="loading-text" text="Loading..." class="loading-text" />
+            <ui:ProgressBar name="progress-bar" low-value="0" high-value="100" class="progress-bar" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

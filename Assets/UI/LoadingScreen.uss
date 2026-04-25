@@ -1,0 +1,53 @@
+.loading-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgb(0, 0, 0);
+}
+
+.background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-and-crop;
+    /* RAGE textures use D3D top-left UV origin; UI Toolkit expects bottom-left for
+       background-image, so flip Y to display them right-side-up. */
+    scale: 1 -1;
+}
+
+.character {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    /* Square 1:1 aspect, anchored to the bottom of the screen. The horizontal slide
+       animation (LoadingScreenView updates style.left each frame) moves it left → right. */
+    width: 512px;
+    height: 512px;
+    -unity-background-scale-mode: scale-to-fit;
+    scale: 1 -1;
+}
+
+.bottom-bar {
+    position: absolute;
+    bottom: 40px;
+    left: 40px;
+    right: 40px;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.loading-text {
+    color: rgb(255, 255, 255);
+    font-size: 24px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    text-shadow: 2px 2px 4px rgb(0, 0, 0);
+}
+
+.progress-bar {
+    height: 24px;
+}

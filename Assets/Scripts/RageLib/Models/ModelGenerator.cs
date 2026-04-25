@@ -1,0 +1,367 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using RageLib.Models.Data;
+using RageLib.Models.Resource;
+using RageLib.Models.Resource.Shaders;
+using RageLib.Textures;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace RageLib.Models
+{
+    internal static class ModelGenerator
+    {
+        private static readonly Dictionary<string, RageUnityTexture> textureCache = new Dictionary<string, RageUnityTexture>();
+
+        private static Textures.Texture FindTexture(TextureFile textures, string name)
+        {
+            if (textures == null)
+            {
+                return null;
+            }
+            return textures.FindTextureByName(name);
+        }
+
+        private static RageUnityTexture GetTexture(string textureName, TextureFile attachedTexture, TextureFile[] externalTextures)
+        {
+            lock (textureCache)
+            {
+                if (string.IsNullOrEmpty(textureName))
+                {
+                    return null;
+                }
+
+                if (textureCache.ContainsKey(textureName))
+                    return textureCache[textureName];
+
+                var textureObj = FindTexture(attachedTexture, textureName);
+                if (textureObj == null && externalTextures != null)
+                {
+                    foreach (var file in externalTextures)
+                    {
+                        textureObj = FindTexture(file, textureName);
+                        if (textureObj != null)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                if (textureObj != null)
+                {
+                    var decodedTexture = textureObj.Decode() as RageUnityTexture;
+                    textureCache[textureName] = decodedTexture;
+                    return decodedTexture;
+                }
+
+                return null;
+            }
+        }
+
+        internal static ModelNode GenerateModel(FragTypeModel fragTypeModel, TextureFile[] textures)
+        {
+            var fragTypeGroup = new Model3DGroup();
+            var fragTypeNode = new ModelNode { DataModel = fragTypeModel, Model3D = fragTypeGroup, Name = "FragType", NoCount = true };
+
+            var parentDrawableNode = GenerateModel(fragTypeModel.Drawable, textures);
+            parentDrawableNode.NoCount = false;
+            parentDrawableNode.Name = "FragmentParent";
+            fragTypeGroup.Children.Add(parentDrawableNode.Model3D);
+            fragTypeNode.Children.Add(parentDrawableNode);
+
+            // Process fragment children with proper naming and transform data
+            for (int i = 0; i < fragTypeModel.Children.Length; i++)
+            {
+                var fragTypeChild = fragTypeModel.Children[i];
+                if (fragTypeChild.Drawable != null && fragTypeChild.Drawable.ModelCollection.Length > 0)
+                {
+                    var childDrawableNode = GenerateModel(fragTypeChild.Drawable, textures);
+                    childDrawableNode.NoCount = false;
+                    childDrawableNode.Name = $"FragmentChild_{i}";
+                    
+                    // Store the fragment child reference for transform application
+                    childDrawableNode.FragmentChild = fragTypeChild;
+                    childDrawableNode.FragmentChildIndex = i;
+                    
+                    fragTypeGroup.Children.Add(childDrawableNode.Model3D);
+                    fragTypeNode.Children.Add(childDrawableNode);
+                }
+            }
+
+            return fragTypeNode;
+        }
+
+        internal static ModelNode GenerateModel(DrawableModelDictionary drawableModelDictionary, TextureFile[] textures)
+        {
+            var dictionaryTypeGroup = new Model3DGroup();
+            var dictionaryTypeNode = new ModelNode { DataModel = drawableModelDictionary, Model3D = dictionaryTypeGroup, Name = "Dictionary", NoCount = true };
+            foreach (var entry in drawableModelDictionary.Entries)
+            {
+                var drawableNode = GenerateModel(entry, textures);
+                drawableNode.NoCount = false;
+                dictionaryTypeGroup.Children.Add(drawableNode.Model3D);
+                dictionaryTypeNode.Children.Add(drawableNode);
+            }
+            return dictionaryTypeNode;
+        }
+
+        internal static ModelNode GenerateModel(DrawableModel drawableModel, TextureFile[] textures)
+        {
+            return GenerateModel(new Drawable(drawableModel), textures);
+        }
+
+        internal static ModelNode GenerateModel(Drawable drawable, TextureFile[] textures)
+        {
+            var materials = new RageMaterial[drawable.Materials.Count];
+            //Debug.Log($"Material Count: {materials.Length}");
+
+            for (int i = 0; i < materials.Length; i++)
+            {
+                var drawableMat = drawable.Materials[i];
+                string texName = null;
+                string normalTexName = null;
+                string specularTexName = null;
+                RageUnityTexture mainTex = new RageUnityTexture(1, 1, TextureFormat.ARGB32, false);
+                RageUnityTexture normalTex = null;
+                RageUnityTexture specularTex = null;
+
+                // Get main texture. Standard pattern: ParamNameHash.Texture ("DiffuseTex").
+                // Multi-layer terrain shaders (gta_terrain_va_3lyr/4lyr) and other variants
+                // don't have that key — they use TextureLayer0..N or shader-specific names.
+                // Fall back to scanning the dict for the first MaterialParamTexture rather
+                // than assuming Parameters[0] is the texture (it isn't in many shaders).
+                if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.Texture))
+                {
+                    var texture = drawableMat.Parameters[(int)ParamNameHash.Texture] as MaterialParamTexture;
+                    if (texture != null)
+                    {
+                        mainTex = GetTexture(texture.TextureName, drawable.AttachedTexture, textures);
+                        texName = texture.TextureName;
+                    }
+                    else
+                    {
+                        texName = "";
+                    }
+                }
+                else
+                {
+                    foreach (var param in drawableMat.Parameters.Values)
+                    {
+                        if (param is MaterialParamTexture tex)
+                        {
+                            mainTex = GetTexture(tex.TextureName, drawable.AttachedTexture, textures);
+                            texName = tex.TextureName;
+                            break;
+                        }
+                    }
+                    if (texName == null) texName = "";
+                }
+
+                // Get normal texture
+                if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.NormalTexture))
+                {
+                    var normalTexture = drawableMat.Parameters[(int)ParamNameHash.NormalTexture] as MaterialParamTexture;
+                    if (normalTexture != null)
+                    {
+                        normalTex = GetTexture(normalTexture.TextureName, drawable.AttachedTexture, textures);
+                        normalTexName = normalTexture.TextureName;
+                    }
+                }
+
+                // Get specular texture
+                if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.SpecularTexture))
+                {
+                    var specularTexture = drawableMat.Parameters[(int)ParamNameHash.SpecularTexture] as MaterialParamTexture;
+                    if (specularTexture != null)
+                    {
+                        specularTex = GetTexture(specularTexture.TextureName, drawable.AttachedTexture, textures);
+                        specularTexName = specularTexture.TextureName;
+                    }
+                }
+
+                var material = new RageMaterial(drawableMat.ShaderName, texName, mainTex);
+                material.normalTex = normalTex;
+                material.normalTextureName = normalTexName;
+                material.specularTex = specularTex;
+                material.specularTextureName = specularTexName;
+
+                // Terrain shaders need every diffuse layer, not just the base. Collect each
+                // MaterialParamTexture in declaration order so MaterialBuilder can route them
+                // to the gta_terrain_va_3lyr / 4lyr shader's _Layer1.._Layer3 slots.
+                if (drawableMat.ShaderName != null &&
+                    drawableMat.ShaderName.IndexOf("terrain_va", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var layerTexes = new System.Collections.Generic.List<RageUnityTexture>(4);
+                    var layerNames = new System.Collections.Generic.List<string>(4);
+                    foreach (var param in drawableMat.Parameters.Values)
+                    {
+                        if (param is MaterialParamTexture tex)
+                        {
+                            layerTexes.Add(GetTexture(tex.TextureName, drawable.AttachedTexture, textures));
+                            layerNames.Add(tex.TextureName);
+                            if (layerTexes.Count >= 4) break;
+                        }
+                    }
+                    material.layerTextures     = layerTexes.ToArray();
+                    material.layerTextureNames = layerNames.ToArray();
+                }
+
+                materials[i] = material;
+            }
+
+            var drawableModelGroup = new Model3DGroup();
+            var drawableModelNode = new ModelNode { DataModel = drawable, Model3D = drawableModelGroup, Name = "Drawable", NoCount = true };
+
+            foreach (var model in drawable.Models)
+            {
+                var modelGroup = new Model3DGroup();
+                var modelNode = new ModelNode { DataModel = model, Model3D = modelGroup, Name = "Model" };
+                drawableModelNode.Children.Add(modelNode);
+                foreach (var geometry in model.Geometries)
+                {
+                    var geometryGroup = new Model3DGroup();
+                    var geometryNode = new ModelNode { DataModel = geometry, Model3D = geometryGroup, Name = "Geometry" };
+                    modelNode.Children.Add(geometryNode);
+
+                    for (int meshIndex = 0; meshIndex < geometry.Meshes.Count; meshIndex++)
+                    {
+                        var mesh = geometry.Meshes[meshIndex];
+                        var mesh3D = new MeshGeometry3D();
+
+                        var meshNode = new ModelNode { DataModel = mesh, Model3D = null, Name = "Mesh" };
+                        geometryNode.Children.Add(meshNode);
+
+                        var jobsVertexData = new NativeArray<CleanVertex>(mesh.DecodeUnityBurstVertexData(), Allocator.TempJob);
+
+                        var decodeJob = new MeshDecodeJob
+                        {
+                            Positions = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
+                            Normals = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
+                            TextureCoordinates = new NativeArray<Vector2>(jobsVertexData.Length, Allocator.TempJob),
+                            Colors = new NativeArray<Color32>(jobsVertexData.Length, Allocator.TempJob),
+                            Vertices = jobsVertexData,
+                            HasNormals = mesh.VertexHasNormal,
+                            HasTextureCoordinates = mesh.VertexHasTexture,
+                            HasColors = mesh.VertexHasColor
+                        };
+
+                        var decodeIndexJob = new MeshDecodeIndexJob
+                        {
+                            Indices = new NativeArray<ushort>(mesh.DecodeIndexData(), Allocator.TempJob),
+                            TriangleIndices = new NativeList<int>(Allocator.TempJob),
+                            FaceCount = mesh.FaceCount
+                        };
+
+                        var handle = decodeJob.Schedule();
+                        var indexHandle = decodeIndexJob.Schedule(handle);
+                        indexHandle.Complete();
+
+                        mesh3D.positions.AddRange(decodeJob.Positions.ToArray());
+                        if (mesh.VertexHasNormal)
+                        {
+                            mesh3D.normals.AddRange(decodeJob.Normals.ToArray());
+                        }
+                        if (mesh.VertexHasTexture)
+                        {
+                            mesh3D.textureCoordinates.AddRange(decodeJob.TextureCoordinates.ToArray());
+                        }
+                        if (mesh.VertexHasColor)
+                        {
+                            mesh3D.colors.AddRange(decodeJob.Colors.ToArray());
+                        }
+                        mesh3D.triangleIndices.AddRange(decodeIndexJob.TriangleIndices.AsArray().ToArray());
+
+                        decodeJob.Vertices.Dispose();
+                        decodeJob.Positions.Dispose();
+                        decodeJob.Normals.Dispose();
+                        decodeJob.TextureCoordinates.Dispose();
+                        decodeJob.Colors.Dispose();
+                        decodeIndexJob.Indices.Dispose();
+                        decodeIndexJob.TriangleIndices.Dispose();
+
+                        var material = materials[geometry.Meshes[meshIndex].MaterialIndex];
+                        var model3D = new GeometryModel3D(mesh3D, material);
+                        geometryGroup.Children.Add(model3D);
+                        meshNode.Model3D = model3D;
+                    }
+
+                    modelGroup.Children.Add(geometryGroup);
+                }
+
+                drawableModelGroup.Children.Add(modelGroup);
+            }
+
+            return drawableModelNode;
+        }
+
+        [BurstCompile]
+        private struct MeshDecodeJob : IJob
+        {
+            [ReadOnly] public NativeArray<CleanVertex> Vertices;
+            public NativeArray<Vector3> Positions;
+            public NativeArray<Vector3> Normals;
+            public NativeArray<Vector2> TextureCoordinates;
+            public NativeArray<Color32> Colors;
+            public bool HasNormals;
+            public bool HasTextureCoordinates;
+            public bool HasColors;
+
+            public void Execute()
+            {
+                for (int i = 0; i < Vertices.Length; i++)
+                {
+                    Positions[i] = Vertices[i].Position;
+
+                    if (HasNormals)
+                    {
+                        Normals[i] = Vertices[i].Normal;
+                    }
+                    if (HasTextureCoordinates)
+                    {
+                        // Flip U coordinate to compensate for X-axis flip in world space
+                        var uv = Vertices[i].TextureCoordinates;
+                        TextureCoordinates[i] = new Vector2(1.0f - uv.x, uv.y);
+                    }
+                    if (HasColors)
+                    {
+                        // RAGE/D3D9 stores diffuse color packed as ARGB in a uint:
+                        //   byte order in memory (little-endian): B, G, R, A
+                        // Convert to Unity Color32 (RGBA byte order). Terrain shaders read
+                        // the resulting RGB as per-vertex layer-blend weights — getting the
+                        // channel order wrong shows the right blend in the wrong area, which
+                        // is exactly the symptom we hit before this fix.
+                        uint argb = Vertices[i].DiffuseColor;
+                        byte b = (byte)(argb        & 0xFF);
+                        byte g = (byte)((argb >> 8)  & 0xFF);
+                        byte r = (byte)((argb >> 16) & 0xFF);
+                        byte a = (byte)((argb >> 24) & 0xFF);
+                        Colors[i] = new Color32(r, g, b, a);
+                    }
+                }
+            }
+        }
+
+        [BurstCompile]
+        private struct MeshDecodeIndexJob : IJob
+        {
+            [ReadOnly] public NativeArray<ushort> Indices;
+            public NativeList<int> TriangleIndices;
+            public int FaceCount;
+
+            public void Execute()
+            {
+                for (int i = 0; i < FaceCount; i++)
+                {
+                    TriangleIndices.Add(Indices[i * 3 + 0]);
+                    TriangleIndices.Add(Indices[i * 3 + 1]);
+                    TriangleIndices.Add(Indices[i * 3 + 2]);
+                }
+            }
+        }
+
+    }
+}

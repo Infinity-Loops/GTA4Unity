@@ -1,0 +1,252 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.IO;
+using System.Linq;
+using RageLib.FileSystem.Common;
+using File = RageLib.FileSystem.Common.File;
+using RageLib.FileSystem;
+using System.Threading.Tasks;
+
+[System.Serializable]
+public class GTADatLoader
+{
+    private StreamReader reader;
+
+    internal string gameDir;
+    private string path = "common/data/gta.dat";
+
+    public List<string> img = new();
+    public List<string> ipl = new();
+    public List<string> ide = new();
+    public List<string> imgList = new();
+    public List<string> water = new();
+    public List<string> colFile = new();
+    public List<string> splash = new();
+
+    public Dictionary<string, File> gameFiles = new Dictionary<string, File>();
+
+    internal IMGLoader imgLoader;
+    public IDELoader ideLoader;
+    internal IPLLoader iplLoader;
+    internal List<Water> waterPlanes = new List<Water>();
+    internal RealFileSystem root;
+
+    private List<string> localWPLFiles = new List<string>();
+
+    public GTADatLoader(string gameDir, RealFileSystem fs)
+    {
+        this.gameDir = gameDir;
+        root = fs;
+    }
+
+    public async Task LoadGameFiles(Action OnFinishLoad)
+    {
+        ReadDatFile();
+
+        await Task.Run(() =>
+        {
+            imgLoader = new IMGLoader(gameDir);
+
+            List<string> imgFiles = new List<string>();
+
+            SearchFilesRecursively(gameDir, ".wpl", localWPLFiles);
+
+            SearchFilesRecursively(gameDir, ".img", imgFiles);
+
+            imgList = imgFiles;
+
+            LoadingScreen.SetupLoadingTarget(imgList.Count);
+
+            for (int i = 0; i < imgList.Count; i++)
+            {
+                LoadingScreen.AdvanceProgress(imgList[i]);
+                imgLoader.LoadManual(imgList[i]);
+            }
+
+            LoadingScreen.ResetProgress();
+
+            img = imgLoader.imgsPath;
+        });
+
+        await Task.Run(() =>
+        {
+            ideLoader = new IDELoader();
+            
+            List<string> ideFiles = new List<string>();
+
+            SearchFilesRecursively(gameDir, ".ide", ideFiles);
+
+            ide = ideFiles;
+
+            LoadingScreen.SetupLoadingTarget(ide.Count);
+
+            for (int i = 0; i < ide.Count; i++)
+            {
+                LoadingScreen.AdvanceProgress(ide[i]);
+                ideLoader.LoadIDE($"{gameDir}/{ide[i].Replace(gameDir, "")}");
+            }
+
+            LoadingScreen.ResetProgress();
+
+            Debug.Log($"Total ide:{ideFiles.Count}");
+        });
+
+        IVUnity.ComprehensiveHashResolver.Initialize(this);
+        Debug.Log($"Total hashes: {IVUnity.ComprehensiveHashResolver.GetKnownHashCount()}");
+        
+        await Task.Run(() =>
+        {
+            List<FSObject> wplFiles = new List<FSObject>();
+
+            foreach (var image in imgLoader.imgs)
+            {
+                wplFiles.AddRange(image.RootDirectory.CollectByExtension("wpl"));
+            }
+
+
+            iplLoader = new IPLLoader();
+            ipl.Clear();
+            
+            LoadingScreen.SetupLoadingTarget(localWPLFiles.Count);
+
+            foreach (var wplFile in localWPLFiles)
+            {
+                byte[] stream = System.IO.File.ReadAllBytes(wplFile);
+                LoadingScreen.AdvanceProgress(wplFile);
+                iplLoader.LoadIPL(Path.GetFileName(wplFile), stream);
+            }
+            
+            LoadingScreen.ResetProgress();
+
+            LoadingScreen.SetupLoadingTarget(wplFiles.Count);
+
+            foreach (File wplFile in wplFiles)
+            {
+                LoadingScreen.AdvanceProgress(wplFile.Name);
+                ipl.Add(wplFile.Name);
+                iplLoader.LoadIPL(wplFile.Name, wplFile.GetData());
+            }
+
+
+            LoadingScreen.ResetProgress();
+            
+            Debug.Log($"Loaded {ipl.Count} WPL files...");
+        });
+
+
+        await Task.Run(() =>
+        {
+            LoadingScreen.SetupLoadingTarget(water.Count);
+
+            for (int i = 0; i < water.Count; i++)
+            {
+                LoadingScreen.AdvanceProgress(water[i]);
+                Debug.Log($"Loading {gameDir}/{water[i]}");
+                var waterData = new Water($"{gameDir}/{water[i]}");
+                waterPlanes.Add(waterData);
+            }
+
+            LoadingScreen.ResetProgress();
+        });
+
+        await Task.Run(() =>
+        {
+            Debug.Log("Caching game files...");
+
+            for (int i = 0; i < imgLoader.imgs.Count; i++)
+            {
+                List<File> files = imgLoader.imgs[i].GetAllFiles();
+                LoadingScreen.ResetProgress();
+                LoadingScreen.SetupLoadingTarget(files.Count);
+
+                for (int j = 0; j < files.Count; j++)
+                {
+                    var file = files[j];
+                    LoadingScreen.AdvanceProgress(file.Name);
+                    gameFiles[file.Name.ToLower()] = file;
+                }
+
+                Debug.Log($"Cached files for: {imgLoader.imgs[i].ToString()}");
+            }
+        });
+
+        LoadingScreen.ResetProgress();
+
+        Debug.Log("Finished loading.");
+        OnFinishLoad.Invoke();
+    }
+
+    private void ReadDatFile()
+    {
+        reader = System.IO.File.OpenText($"{gameDir}/{path}");
+
+        string line = null;
+
+        while ((line = reader.ReadLine()) != null)
+        {
+            if (line.StartsWith("#") || line.Length < 1)
+            {
+                //Comment Section
+            }
+            else
+            {
+                string[] split = line.Split(" ");
+                split[1] = split[1].Replace("platform:", "pc");
+                split[1] = split[1].Replace("common:", "common");
+                if (!split[1].Contains("common"))
+                {
+                    split[1] = split[1].Replace("IPL", "WPL");
+                }
+
+                if (split[0].Equals("IMG"))
+                {
+                    split[1] = split[1].Replace("\\", "/");
+                    img.Add(split[1]);
+                }
+                else if (split[0].Equals("IDE"))
+                {
+                    ide.Add(split[1]);
+                    Debug.Log($"Adding IDE: {split[1]}");
+                }
+                else if (split[0].Equals("IPL"))
+                {
+                    ipl.Add(split[1]);
+                }
+                else if (split[0].Equals("IMGLIST"))
+                {
+                    imgList.Add(split[1]);
+                }
+                else if (split[0].Equals("WATER"))
+                {
+                    water.Add(split[1]);
+                }
+                else if (split[0].Equals("SPLASH"))
+                {
+                    splash.Add(split[1]);
+                }
+                else if (split[0].Equals("COLFILE"))
+                {
+                    colFile.Add(split[1]);
+                }
+            }
+        }
+
+        reader.Close();
+        reader.Dispose();
+    }
+
+    void SearchFilesRecursively(string directory, string extension, List<string> filePaths)
+    {
+        foreach (string file in System.IO.Directory.GetFiles(directory, $"*{extension}"))
+        {
+            filePaths.Add(file);
+        }
+
+        foreach (string subDirectory in System.IO.Directory.GetDirectories(directory))
+        {
+            SearchFilesRecursively(subDirectory, extension, filePaths);
+        }
+    }
+}
