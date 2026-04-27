@@ -20,7 +20,7 @@ public class GTADatLoader
     internal List<Water> waterPlanes = new();
     internal RealFileSystem root;
 
-    private DatFileReader dat;
+    internal DatFileReader dat;
 
     public GTADatLoader(string gameDir, RealFileSystem fs)
     {

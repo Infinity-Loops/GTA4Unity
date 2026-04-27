@@ -6,9 +6,9 @@ using Unity.Transforms;
 namespace IVUnity.ECS
 {
     /// <summary>
-    /// Pure distance-based streaming. No LOD suppression, no cull groups.
-    /// Matches engine behavior: FUN_00aebff0 renders if distance &lt; drawDist * lodMultiplier.
-    /// LOD visibility is handled entirely by LodFadeSystem via StippleAlpha.
+    /// Pure distance-based streaming.
+    /// LOD visibility handled by LodFadeSystem (within-IPL chains)
+    /// and by hiding LOD entities inside a radius around the focus (cross-IPL overlap).
     /// </summary>
     [UpdateInGroup(typeof(WorldStreamingSystemGroup))]
     [UpdateAfter(typeof(FocusPointSyncSystem))]
@@ -58,9 +58,10 @@ namespace IVUnity.ECS
                 float3 pos = transforms[i].Position;
                 float dx = pos.x - cam.x;
                 float dz = pos.z - cam.z;
-                float dist = math.sqrt(dx * dx + dz * dz);
+                float distSq = dx * dx + dz * dz;
+                float threshold = drawDists[i].Value * lodScale;
 
-                if (dist < drawDists[i].Value * lodScale)
+                if (distSq < threshold * threshold)
                 {
                     EntityManager.SetSharedComponent(entities[i],
                         new StreamingState { Value = StreamingStateValue.Pending });
@@ -87,9 +88,10 @@ namespace IVUnity.ECS
                 float3 pos = transforms[i].Position;
                 float dx = pos.x - cam.x;
                 float dz = pos.z - cam.z;
-                float dist = math.sqrt(dx * dx + dz * dz);
+                float distSq = dx * dx + dz * dz;
+                float threshold = drawDists[i].Value * lodScale * UnloadMargin;
 
-                if (dist >= drawDists[i].Value * lodScale * UnloadMargin)
+                if (distSq >= threshold * threshold)
                 {
                     EntityManager.SetSharedComponent(entities[i],
                         new StreamingState { Value = StreamingStateValue.Unloading });

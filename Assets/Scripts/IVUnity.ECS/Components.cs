@@ -43,6 +43,17 @@ namespace IVUnity.ECS
         public int2 Cell;
     }
 
+    /// <summary>
+    /// Identifies which streaming IPL this entity came from. -1 = gta.dat (always loaded).
+    /// >= 0 = streaming WPL index into StreamingIplRegistry. Used by the activation system
+    /// to hide/show entire WPLs based on focus proximity to the WPL's spatial bounds.
+    /// Engine: DAT_016ec774 pool, FUN_00c77c70 per-frame update.
+    /// </summary>
+    public struct StreamingIplId : ISharedComponentData
+    {
+        public int Value;
+    }
+
     public enum StreamingStateValue : byte
     {
         Dormant   = 0,

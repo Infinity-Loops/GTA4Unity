@@ -21,6 +21,7 @@ namespace IVUnity.ECS
     public partial class LodFadeSystem : SystemBase
     {
         private const float FadeZone = 30f;
+        private const float LodHideFactor = 0.1f;
 
         protected override void OnCreate()
         {
@@ -99,11 +100,17 @@ namespace IVUnity.ECS
                 int totalChildren = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
                 loadedChildCount.TryGetValue(e, out int loadedChildren);
 
+                bool isBaseLayer = em.GetSharedComponent<StreamingIplId>(e).Value < 0;
+
                 if (totalChildren > 0 && loadedChildren >= totalChildren)
                 {
-                    // ALL children loaded → hide LOD parent.
-                    // Engine: coverage bits on +0x54/+0x58, parent hidden when all bits set.
-                    // Hard cutoff at alpha=239 (0xEF) in engine (line 1003583).
+                    // ALL children loaded → hide LOD parent (within-IPL chain).
+                    alpha = 0.0f;
+                }
+                else if (isBaseLayer && dist < effectiveDraw * LodHideFactor)
+                {
+                    // gta.dat entity close to focus → streaming HD covers this area.
+                    // Hide radius scales with entity's own draw distance so coverage matches.
                     alpha = 0.0f;
                 }
                 else if (totalChildren > 0)

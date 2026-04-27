@@ -189,7 +189,8 @@ namespace IVUnity.ECS
                 typeof(DrawDist),
                 typeof(InstanceOrigin),
                 typeof(CellIndex),
-                typeof(StreamingState));
+                typeof(StreamingState),
+                typeof(StreamingIplId));
             var archetypeNonUniform = em.CreateArchetype(
                 typeof(WorldInstanceTag),
                 typeof(LocalTransform),
@@ -199,7 +200,8 @@ namespace IVUnity.ECS
                 typeof(DrawDist),
                 typeof(InstanceOrigin),
                 typeof(CellIndex),
-                typeof(StreamingState));
+                typeof(StreamingState),
+                typeof(StreamingIplId));
 
             int totalInstances = 0;
             foreach (var ipl in loader.iplLoader.ipls) totalInstances += ipl.ipl_inst.Count;
@@ -217,12 +219,25 @@ namespace IVUnity.ECS
             var iplObjsMap   = new Dictionary<int, Item_OBJS>();    // per-IPL: origIdx → IDE def
             int lodLinked = 0, lodTagged = 0;
 
+            // Streaming IPL tracking: gta.dat WPLs = base (-1), others = streaming
+            StreamingIplRegistry.Clear();
+            foreach (var e in loader.dat.GetEntries("IPL"))
+            {
+                string arg = e.Args[0];
+                if (arg.StartsWith("common", System.StringComparison.OrdinalIgnoreCase)) continue;
+                StreamingIplRegistry.BaseWplNames.Add(loader.dat.ResolveWplName(arg).ToLower());
+            }
+
             foreach (var ipl in loader.iplLoader.ipls)
             {
                 int batchStart = created;
                 iplEntityMap.Clear();
                 iplInstMap.Clear();
                 iplObjsMap.Clear();
+
+                bool isBase = StreamingIplRegistry.BaseWplNames.Contains(ipl.name?.ToLower() ?? "");
+                int streamingIplIdx = isBase ? -1 : 0;
+                if (!isBase) StreamingIplRegistry.StreamingWplCount++;
 
                 for (int instIdx = 0; instIdx < ipl.ipl_inst.Count; instIdx++)
                 {
@@ -328,6 +343,7 @@ namespace IVUnity.ECS
                     int2 cell = CellMath.PositionToCell(new float3(uPos.x, uPos.y, uPos.z), cellSize);
                     em.SetSharedComponent(entity, new CellIndex { Cell = cell });
                     em.SetSharedComponent(entity, new StreamingState { Value = StreamingStateValue.Dormant });
+                    em.SetSharedComponent(entity, new StreamingIplId { Value = streamingIplIdx });
 
                     iplEntityMap[instIdx] = entity;
                     iplInstMap[instIdx] = inst;
@@ -431,10 +447,8 @@ namespace IVUnity.ECS
                 $"LOD: {lodLinked} linked, {lodTagged} tagged  " +
                 $"Draw distance propagation: multi-pass upward through chains");
 
-            // --- LOD Cull Groups (cross-IPL LOD suppression) ---
-            // The engine's lodm/lcul section defines spatial bounding boxes with lists
-            // of LOD model hashes. When HD geometry is loaded within the box, the LOD
-            // entities in the group are suppressed. This links strbig LODs (from one IPL)
+            Debug.Log($"[Baker] StreamingIPLs: {StreamingIplRegistry.StreamingWplCount} streaming, " +
+                      $"{StreamingIplRegistry.BaseWplNames.Count} base (gta.dat)");
         }
     }
 }
