@@ -25,11 +25,11 @@ namespace IVUnity.ECS
     {
         private static readonly string[] ModelExtensions = { ".wdr", ".wdd", ".wft", ".wbn", ".wbd" };
 
-        // Renderable + parseable only. .wdd holds LOD variants packed together; without
-        // proper LOD/sub-drawable selection we'd stack every LOD on the same instance.
-        // Re-add .wdd once a WddDrawableSelector is in place.
+        // Renderable + parseable. WDD now supported via hash-based sub-drawable selection
+        // (WddSingleEntry in ModelLoader). Collision (.wbn/.wbd) still excluded.
         private static bool IsModelExt(string ext) =>
             ext.Equals(".wdr", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".wdd", StringComparison.OrdinalIgnoreCase) ||
             ext.Equals(".wft", StringComparison.OrdinalIgnoreCase);
 
         public static void Bake(
@@ -186,6 +186,7 @@ namespace IVUnity.ECS
                 typeof(LocalTransform),
                 typeof(LocalToWorld),
                 typeof(ModelRef),
+                typeof(DrawDist),
                 typeof(InstanceOrigin),
                 typeof(CellIndex),
                 typeof(StreamingState));
@@ -195,6 +196,7 @@ namespace IVUnity.ECS
                 typeof(LocalToWorld),
                 typeof(PostTransformMatrix),
                 typeof(ModelRef),
+                typeof(DrawDist),
                 typeof(InstanceOrigin),
                 typeof(CellIndex),
                 typeof(StreamingState));
@@ -207,11 +209,24 @@ namespace IVUnity.ECS
             ulong sourceId = 0;
             int created = 0, skippedTobj = 0, skippedUnresolved = 0, skippedDuplicate = 0;
 
+            // LOD linkage: inst.lod is an index within the same IPL. We collect
+            // per-IPL (originalIndex → entity) + (originalIndex → inst) so a second
+            // pass can wire LodRef on HD entities and LodTag on LOD entities.
+            var iplEntityMap = new Dictionary<int, Entity>();        // per-IPL: origIdx → entity
+            var iplInstMap   = new Dictionary<int, Ipl_INST>();     // per-IPL: origIdx → inst
+            var iplObjsMap   = new Dictionary<int, Item_OBJS>();    // per-IPL: origIdx → IDE def
+            int lodLinked = 0, lodTagged = 0;
+
             foreach (var ipl in loader.iplLoader.ipls)
             {
                 int batchStart = created;
-                foreach (var inst in ipl.ipl_inst)
+                iplEntityMap.Clear();
+                iplInstMap.Clear();
+                iplObjsMap.Clear();
+
+                for (int instIdx = 0; instIdx < ipl.ipl_inst.Count; instIdx++)
                 {
+                    var inst = ipl.ipl_inst[instIdx];
                     sourceId++;
 
                     // Resolve name: prefer inst.name, fall back to hash lookup, fall back to "0x{hex}"
@@ -301,20 +316,126 @@ namespace IVUnity.ECS
                         });
                     }
                     em.SetComponentData(entity, new ModelRef { ModelHash = hash });
+
+                    // Per-entity draw distance from IDE. Default 300 if no IDE entry.
+                    float drawDist = 300f;
+                    if (objDef?.drawDistance != null && objDef.drawDistance.Length > 0)
+                        drawDist = objDef.drawDistance[0];
+                    em.SetComponentData(entity, new DrawDist { Value = drawDist });
+
                     em.SetComponentData(entity, new InstanceOrigin { SourceId = sourceId });
 
                     int2 cell = CellMath.PositionToCell(new float3(uPos.x, uPos.y, uPos.z), cellSize);
                     em.SetSharedComponent(entity, new CellIndex { Cell = cell });
                     em.SetSharedComponent(entity, new StreamingState { Value = StreamingStateValue.Dormant });
 
+                    iplEntityMap[instIdx] = entity;
+                    iplInstMap[instIdx] = inst;
+                    iplObjsMap[instIdx] = objDef;
+
                     created++;
                 }
+
+                // --- LOD linkage pass for this IPL ---
+                // inst.lod >= 0: this HD instance's LOD replacement is at that index.
+                // inst.lod == -1: this instance IS a LOD (or has no LOD pair).
+                // We tag LOD entities and add LodRef on HD entities pointing to their LOD.
+                var lodTargets = new HashSet<int>(); // indices that are LOD targets
+                foreach (var kv in iplInstMap)
+                {
+                    if (kv.Value.lod >= 0) lodTargets.Add(kv.Value.lod);
+                }
+
+                foreach (var lodIdx in lodTargets)
+                {
+                    if (iplEntityMap.TryGetValue(lodIdx, out var lodEntity))
+                    {
+                        em.AddComponentData(lodEntity, new LodTag());
+                        em.AddComponentData(lodEntity, new LodChildCount { Value = 0 });
+                        lodTagged++;
+                    }
+                }
+
+                // Count children per LOD and add LodRef on HD entities.
+                var childCounts = new Dictionary<int, int>();
+                int brokenHd = 0, brokenLod = 0;
+                foreach (var kv in iplInstMap)
+                {
+                    int lodIdx = kv.Value.lod;
+                    if (lodIdx < 0) continue;
+
+                    bool hdExists = iplEntityMap.TryGetValue(kv.Key, out var hdEntity);
+                    bool lodExists = iplEntityMap.TryGetValue(lodIdx, out var lodEntity);
+
+                    if (!hdExists) { brokenHd++; continue; }
+                    if (!lodExists) { brokenLod++; continue; }
+
+                    em.AddComponentData(hdEntity, new LodRef
+                    {
+                        LodEntity = lodEntity,
+                    });
+                    lodLinked++;
+
+                    if (!childCounts.ContainsKey(lodIdx))
+                        childCounts[lodIdx] = 0;
+                    childCounts[lodIdx]++;
+                }
+                if (brokenHd > 0 || brokenLod > 0)
+                    Debug.LogWarning($"[Baker] IPL '{ipl.name}': {brokenHd} broken HD links (HD deduped), {brokenLod} broken LOD links (LOD deduped)");
+
+                // Write child counts (engine +0x61)
+                foreach (var kv in childCounts)
+                {
+                    if (iplEntityMap.TryGetValue(kv.Key, out var lodEntity))
+                        em.SetComponentData(lodEntity, new LodChildCount { Value = kv.Value });
+                }
+
+                // --- LOD draw distance propagation (engine: SetupLodHierarchy) ---
+                // Propagate max(children drawDist) upward through the chain, capped at 600.
+                // Iterate until stable so deep chains HD→LOD1→LOD2 fully propagate.
+                const float LodDrawDistCap = 600f;
+                int propPasses = 0, propUpdated = 0;
+                for (int pass = 0; pass < 10; pass++)
+                {
+                    bool changed = false;
+                    foreach (var kv in iplInstMap)
+                    {
+                        int lodIdx = kv.Value.lod;
+                        if (lodIdx < 0) continue;
+                        if (!iplEntityMap.TryGetValue(kv.Key, out var childEntity)) continue;
+                        if (!iplEntityMap.TryGetValue(lodIdx, out var parentEntity)) continue;
+
+                        float childDist = em.GetComponentData<DrawDist>(childEntity).Value;
+                        if (childDist > LodDrawDistCap) childDist = LodDrawDistCap;
+
+                        float parentDist = em.GetComponentData<DrawDist>(parentEntity).Value;
+                        if (childDist > parentDist)
+                        {
+                            em.SetComponentData(parentEntity, new DrawDist { Value = childDist });
+                            changed = true;
+                            propUpdated++;
+                        }
+                    }
+                    propPasses++;
+                    if (!changed) break;
+                }
+                if (propUpdated > 0)
+                    Debug.Log($"[Baker] IPL '{ipl.name}': DrawDist propagation: {propUpdated} updates in {propPasses} passes");
+
                 LoadingScreen.AdvanceProgress(ipl.name, created - batchStart);
             }
 
             Debug.Log(
                 $"[Baker] Created {created} root entities " +
-                $"(skipped {skippedUnresolved} unresolved, {skippedTobj} TOBJ, {skippedDuplicate} duplicate)");
+                $"(skipped {skippedUnresolved} unresolved, {skippedTobj} TOBJ, {skippedDuplicate} duplicate) " +
+                $"LOD: {lodLinked} linked, {lodTagged} tagged  " +
+                $"Draw distance propagation: multi-pass upward through chains");
+
+            // --- LOD Cull Groups (cross-IPL LOD suppression) ---
+            // The engine's lodm/lcul section defines spatial bounding boxes with lists
+            // of LOD model hashes. When HD geometry is loaded within the box, the LOD
+            // entities in the group are suppressed. This links strbig LODs (from one IPL)
         }
     }
 }
+

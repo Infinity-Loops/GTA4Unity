@@ -1,64 +1,52 @@
 # GTA4Unity
-Open source reimplementation of GTA IV game engine in Unity 6
 
-![](Docs/Screenshot.png)
-![](Docs/Screenshot2.png)
-![](Docs/Screenshot3.png)
-![](Docs/Screenshot4.png)
-![](Docs/Screenshot5.png)
+Loads GTA IV's world into Unity 6. Reads the game's original files (IMG archives, WDR/WFT models, WTD textures, WPL/IPL placements, IDE definitions) and renders them using Unity's Entity Component System with Entities Graphics (BatchRendererGroup).
 
-## Features
-- Full GTA IV world loading and rendering
-- High-performance streaming system with multi-threaded loading
-- Advanced material and texture sharing system
-- Support for both GTA IV and Episodes from Liberty City (EFLC)
-- Object pooling and spatial indexing for optimal performance
-- Unity 6 with Universal Render Pipeline (URP)
+Requires a GTA IV installation — the project doesn't include any game assets.
+
+![](Screenshots/Screenshot.png)
+![](Screenshots/Screenshot2.png)
+![](Screenshots/Screenshot3.png)
+![](Screenshots/Screenshot4.png)
+![](Screenshots/Screenshot5.png)
+
+## How it works
+
+RageLib handles RAGE engine file format parsing. The world gets built through an ECS pipeline:
+
+- **GTADatLoader** reads `gta.dat`, opens IMG archives, parses IDE/IPL/WPL files and water definitions
+- **WorldEntityBaker** creates one ECS entity per world instance, indexed into spatial cells
+- **CellActivationSystem** streams cells in/out based on camera distance
+- **ModelLoader** parses models on worker threads with textures resolved through per-model TXD parent chains
+- **MainThreadMeshUploadSystem** builds Unity meshes and materials, registers them with Entities Graphics
+- **InstancePromotionSystem** spawns rendered children once a model finishes loading
+
+Texture resolution uses a per-model parent chain: each model's IDE entry names a parent TXD, and the `txdp` IDE section defines TXD-to-TXD parent relationships. Lookups walk this chain using the pgDictionary hash table, so textures resolve the same way the original engine does.
+
+## What's in here
+
+- RageLib parser for WDR, WFT, WTD, WDD, WPL, IDE, IMG formats
+- ECS streaming with cell-based activation and LRU eviction
+- Ref-counted TXD store with IDE-driven parent chain
+- Fragment support (WFT) with skeleton-based bone positioning
+- Water mesh generation
+- Procedural skybox (atmosphere scattering + layered clouds)
+- Terrain blend shaders (2/3/4 layer with vertex color weights)
+
+## Setup
+
+1. Unity 6 (6000.4.0f1+), URP, Forward+
+2. Clone and open in Unity Hub
+3. Open the ECSWorld scene
+4. Set `gameDir` on the ECSWorldBootstrap component to your GTA IV install path
+5. Play
+
+## Status
+
+World geometry and textures load and stream correctly. This isn't a complete project yet — no physics, vehicles, peds, or gameplay.
 
 ## Requirements
-- Unity 6 (6000.2.1f1 or later)
-- GTA IV installation (retail, Steam, or EFLC)
-- Windows (primary platform)
-- 8GB+ RAM recommended
 
-## Getting Started
-
-### Setup
-1. Clone this repository
-2. Open the project in Unity Hub (ensure Unity 6 is installed)
-3. Open the main scene in Unity
-4. Find the 'Loader' GameObject in the hierarchy
-5. Set the `gameDir` field to your GTA IV installation directory
-6. Press Play to start loading the map
-
-### Performance Notes
-- Initial loading is optimized with multi-threading and caching
-- World streaming happens dynamically based on player position
-- Materials and textures are shared across all models for memory efficiency
-- Embedded textures are properly handled to prevent missing textures
-
-## Technical Details
-
-### World Loading System
-The **HighPerformanceLoader** provides:
-- Multi-threaded loading with 8 parallel file workers
-- Spatial grid indexing (100m cells) for O(1) proximity queries
-- Priority-based loading queues (distance-based)
-- Smart LRU caching with reference counting
-- Object pooling to minimize GC pressure
-- Batched GameObject spawning to reduce main thread overhead
-
-### Material & Texture System
-The **MaterialTextureResolver** ensures:
-- All textures are pre-indexed during initialization
-- Materials with the same texture share Unity materials
-- Embedded textures remain accessible even when source models aren't loaded
-- Case-insensitive matching handles naming inconsistencies
-
-### Rendering
-- Texture conversion from BGR to RGB happens in shader (gta_default.shadergraph)
-- LOD system with 4 distance-based levels
-- Unity's Universal Render Pipeline for modern rendering features
-
-## Development
-World streaming is managed by the HighPerformanceLoader class, which replaced the older WorldComposerMachine. The system loads WPL instances and IDE objects with intelligent caching and streaming based on player position.
+- Windows
+- GTA IV installed (Complete Edition, Steam, or EFLC)
+- 8GB+ RAM

@@ -24,7 +24,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource
 {
-    class DrawableModelDictionary : PGDictionary<DrawableModel>, IDataReader, IEmbeddedResourceReader, IDisposable
+    public class DrawableModelDictionary : PGDictionary<DrawableModel>, IDataReader, IEmbeddedResourceReader, IDisposable
     {
         public void ReadData(BinaryReader br)
         {

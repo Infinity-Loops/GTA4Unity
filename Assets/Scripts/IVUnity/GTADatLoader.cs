@@ -1,39 +1,26 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
-using System.Linq;
 using RageLib.FileSystem.Common;
 using File = RageLib.FileSystem.Common.File;
 using RageLib.FileSystem;
 using System.Threading.Tasks;
 
-[System.Serializable]
+[Serializable]
 public class GTADatLoader
 {
-    private StreamReader reader;
-
     internal string gameDir;
-    private string path = "common/data/gta.dat";
 
-    public List<string> img = new();
-    public List<string> ipl = new();
-    public List<string> ide = new();
-    public List<string> imgList = new();
-    public List<string> water = new();
-    public List<string> colFile = new();
-    public List<string> splash = new();
-
-    public Dictionary<string, File> gameFiles = new Dictionary<string, File>();
+    public Dictionary<string, File> gameFiles = new();
 
     internal IMGLoader imgLoader;
     public IDELoader ideLoader;
     internal IPLLoader iplLoader;
-    internal List<Water> waterPlanes = new List<Water>();
+    internal List<Water> waterPlanes = new();
     internal RealFileSystem root;
 
-    private List<string> localWPLFiles = new List<string>();
+    private DatFileReader dat;
 
     public GTADatLoader(string gameDir, RealFileSystem fs)
     {
@@ -43,210 +30,180 @@ public class GTADatLoader
 
     public async Task LoadGameFiles(Action OnFinishLoad)
     {
-        ReadDatFile();
+        dat = new DatFileReader(gameDir, "common/data/gta.dat");
+        var imgList = new ImagesListReader(gameDir, "common/data/images.txt");
 
-        await Task.Run(() =>
-        {
-            imgLoader = new IMGLoader(gameDir);
-
-            List<string> imgFiles = new List<string>();
-
-            SearchFilesRecursively(gameDir, ".wpl", localWPLFiles);
-
-            SearchFilesRecursively(gameDir, ".img", imgFiles);
-
-            imgList = imgFiles;
-
-            LoadingScreen.SetupLoadingTarget(imgList.Count);
-
-            for (int i = 0; i < imgList.Count; i++)
-            {
-                LoadingScreen.AdvanceProgress(imgList[i]);
-                imgLoader.LoadManual(imgList[i]);
-            }
-
-            LoadingScreen.ResetProgress();
-
-            img = imgLoader.imgsPath;
-        });
-
-        await Task.Run(() =>
-        {
-            ideLoader = new IDELoader();
-            
-            List<string> ideFiles = new List<string>();
-
-            SearchFilesRecursively(gameDir, ".ide", ideFiles);
-
-            ide = ideFiles;
-
-            LoadingScreen.SetupLoadingTarget(ide.Count);
-
-            for (int i = 0; i < ide.Count; i++)
-            {
-                LoadingScreen.AdvanceProgress(ide[i]);
-                ideLoader.LoadIDE($"{gameDir}/{ide[i].Replace(gameDir, "")}");
-            }
-
-            LoadingScreen.ResetProgress();
-
-            Debug.Log($"Total ide:{ideFiles.Count}");
-        });
-
-        IVUnity.ComprehensiveHashResolver.Initialize(this);
-        Debug.Log($"Total hashes: {IVUnity.ComprehensiveHashResolver.GetKnownHashCount()}");
-        
-        await Task.Run(() =>
-        {
-            List<FSObject> wplFiles = new List<FSObject>();
-
-            foreach (var image in imgLoader.imgs)
-            {
-                wplFiles.AddRange(image.RootDirectory.CollectByExtension("wpl"));
-            }
-
-
-            iplLoader = new IPLLoader();
-            ipl.Clear();
-            
-            LoadingScreen.SetupLoadingTarget(localWPLFiles.Count);
-
-            foreach (var wplFile in localWPLFiles)
-            {
-                byte[] stream = System.IO.File.ReadAllBytes(wplFile);
-                LoadingScreen.AdvanceProgress(wplFile);
-                iplLoader.LoadIPL(Path.GetFileName(wplFile), stream);
-            }
-            
-            LoadingScreen.ResetProgress();
-
-            LoadingScreen.SetupLoadingTarget(wplFiles.Count);
-
-            foreach (File wplFile in wplFiles)
-            {
-                LoadingScreen.AdvanceProgress(wplFile.Name);
-                ipl.Add(wplFile.Name);
-                iplLoader.LoadIPL(wplFile.Name, wplFile.GetData());
-            }
-
-
-            LoadingScreen.ResetProgress();
-            
-            Debug.Log($"Loaded {ipl.Count} WPL files...");
-        });
-
-
-        await Task.Run(() =>
-        {
-            LoadingScreen.SetupLoadingTarget(water.Count);
-
-            for (int i = 0; i < water.Count; i++)
-            {
-                LoadingScreen.AdvanceProgress(water[i]);
-                Debug.Log($"Loading {gameDir}/{water[i]}");
-                var waterData = new Water($"{gameDir}/{water[i]}");
-                waterPlanes.Add(waterData);
-            }
-
-            LoadingScreen.ResetProgress();
-        });
-
-        await Task.Run(() =>
-        {
-            Debug.Log("Caching game files...");
-
-            for (int i = 0; i < imgLoader.imgs.Count; i++)
-            {
-                List<File> files = imgLoader.imgs[i].GetAllFiles();
-                LoadingScreen.ResetProgress();
-                LoadingScreen.SetupLoadingTarget(files.Count);
-
-                for (int j = 0; j < files.Count; j++)
-                {
-                    var file = files[j];
-                    LoadingScreen.AdvanceProgress(file.Name);
-                    gameFiles[file.Name.ToLower()] = file;
-                }
-
-                Debug.Log($"Cached files for: {imgLoader.imgs[i].ToString()}");
-            }
-        });
+        await MountImgsAndCacheFiles(imgList);
+        await LoadIdes();
+        await LoadWpls();
+        LoadWater();
 
         LoadingScreen.ResetProgress();
-
         Debug.Log("Finished loading.");
         OnFinishLoad.Invoke();
     }
 
-    private void ReadDatFile()
+    private async Task MountImgsAndCacheFiles(ImagesListReader imgList)
     {
-        reader = System.IO.File.OpenText($"{gameDir}/{path}");
-
-        string line = null;
-
-        while ((line = reader.ReadLine()) != null)
+        await Task.Run(() =>
         {
-            if (line.StartsWith("#") || line.Length < 1)
+            imgLoader = new IMGLoader();
+
+            var imgPriority = new Dictionary<string, (int pri, int ord)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in imgList.Entries)
+                imgPriority[$"{gameDir}/{e.Path}"] = (e.Priority, e.Order);
+
+            var allImgFiles = new List<string>();
+            SearchFilesRecursively(gameDir, ".img", allImgFiles);
+
+            allImgFiles.Sort((a, b) =>
             {
-                //Comment Section
-            }
-            else
-            {
-                string[] split = line.Split(" ");
-                split[1] = split[1].Replace("platform:", "pc");
-                split[1] = split[1].Replace("common:", "common");
-                if (!split[1].Contains("common"))
+                bool aKnown = imgPriority.TryGetValue(a, out var aPri);
+                bool bKnown = imgPriority.TryGetValue(b, out var bPri);
+                if (aKnown && bKnown)
                 {
-                    split[1] = split[1].Replace("IPL", "WPL");
+                    if (aPri.pri != bPri.pri) return aPri.pri.CompareTo(bPri.pri);
+                    return aPri.ord.CompareTo(bPri.ord);
+                }
+                if (aKnown) return -1;
+                if (bKnown) return 1;
+                return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            });
+
+            LoadingScreen.SetupLoadingTarget(allImgFiles.Count);
+            for (int i = 0; i < allImgFiles.Count; i++)
+            {
+                LoadingScreen.AdvanceProgress(allImgFiles[i]);
+                imgLoader.Load(allImgFiles[i]);
+            }
+
+            var filePriority = new Dictionary<string, (int pri, int ord)>(StringComparer.OrdinalIgnoreCase);
+
+            LoadingScreen.ResetProgress();
+            LoadingScreen.SetupLoadingTarget(imgLoader.imgs.Count);
+
+            for (int i = 0; i < imgLoader.imgs.Count; i++)
+            {
+                string imgPath = i < allImgFiles.Count ? allImgFiles[i] : "";
+                imgPriority.TryGetValue(imgPath, out var thisPri);
+
+                var files = imgLoader.imgs[i].GetAllFiles();
+                for (int j = 0; j < files.Count; j++)
+                {
+                    string key = files[j].Name.ToLower();
+
+                    if (filePriority.TryGetValue(key, out var existingPri))
+                    {
+                        if (thisPri.pri < existingPri.pri) continue;
+                        if (thisPri.pri == existingPri.pri && thisPri.ord <= existingPri.ord) continue;
+                    }
+
+                    gameFiles[key] = files[j];
+                    filePriority[key] = thisPri;
                 }
 
-                if (split[0].Equals("IMG"))
-                {
-                    split[1] = split[1].Replace("\\", "/");
-                    img.Add(split[1]);
-                }
-                else if (split[0].Equals("IDE"))
-                {
-                    ide.Add(split[1]);
-                    Debug.Log($"Adding IDE: {split[1]}");
-                }
-                else if (split[0].Equals("IPL"))
-                {
-                    ipl.Add(split[1]);
-                }
-                else if (split[0].Equals("IMGLIST"))
-                {
-                    imgList.Add(split[1]);
-                }
-                else if (split[0].Equals("WATER"))
-                {
-                    water.Add(split[1]);
-                }
-                else if (split[0].Equals("SPLASH"))
-                {
-                    splash.Add(split[1]);
-                }
-                else if (split[0].Equals("COLFILE"))
-                {
-                    colFile.Add(split[1]);
-                }
+                LoadingScreen.AdvanceProgress(imgLoader.imgs[i].ToString());
             }
-        }
 
-        reader.Close();
-        reader.Dispose();
+            LoadingScreen.ResetProgress();
+            Debug.Log($"Cached {gameFiles.Count} files from {imgLoader.imgs.Count} IMGs");
+        });
     }
 
-    void SearchFilesRecursively(string directory, string extension, List<string> filePaths)
+    private async Task LoadIdes()
+    {
+        await Task.Run(() =>
+        {
+            ideLoader = new IDELoader();
+
+            var ideFiles = new List<string>();
+            SearchFilesRecursively(gameDir, ".ide", ideFiles);
+
+            LoadingScreen.SetupLoadingTarget(ideFiles.Count);
+            for (int i = 0; i < ideFiles.Count; i++)
+            {
+                LoadingScreen.AdvanceProgress(ideFiles[i]);
+                ideLoader.LoadIDE($"{gameDir}/{ideFiles[i].Replace(gameDir, "")}");
+            }
+            LoadingScreen.ResetProgress();
+
+            Debug.Log($"Total ide: {ideFiles.Count}");
+        });
+    }
+
+    private async Task LoadWpls()
+    {
+        // Engine two-tier IPL loading:
+        //   1. gta.dat IPLs → base world with LOD chains (inst.lod links within each WPL)
+        //   2. Streaming IPLs → HD detail from IMGs, loaded by proximity
+        // We load gta.dat WPLs FIRST so their LOD chains survive dedup in WorldEntityBaker,
+        // then all remaining WPLs from IMGs for HD geometry.
+        await Task.Run(() =>
+        {
+            iplLoader = new IPLLoader();
+            var loadedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Pass 1: gta.dat WPLs (base world with LOD hierarchy)
+            foreach (var e in dat.GetEntries("IPL"))
+            {
+                string arg = e.Args[0];
+                if (arg.StartsWith("common", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string wplName = dat.ResolveWplName(arg);
+
+                if (gameFiles.TryGetValue(wplName.ToLower(), out File wpl))
+                {
+                    iplLoader.LoadIPL(wpl.Name, wpl.GetData());
+                    loadedNames.Add(wplName.ToLower());
+                }
+                else
+                {
+                    string wplPath = dat.ResolveWplPath(arg);
+                    if (System.IO.File.Exists(wplPath))
+                    {
+                        byte[] data = System.IO.File.ReadAllBytes(wplPath);
+                        iplLoader.LoadIPL(wplName, data);
+                        loadedNames.Add(wplName.ToLower());
+                    }
+                }
+            }
+
+            int baseCount = loadedNames.Count;
+
+            // Pass 2: all remaining WPLs from IMGs (streaming HD content)
+            foreach (var kvp in gameFiles)
+            {
+                if (!kvp.Key.EndsWith(".wpl")) continue;
+                if (loadedNames.Contains(kvp.Key)) continue;
+
+                iplLoader.LoadIPL(kvp.Value.Name, kvp.Value.GetData());
+                loadedNames.Add(kvp.Key);
+            }
+
+            Debug.Log($"Loaded {loadedNames.Count} WPL files ({baseCount} base from gta.dat, " +
+                      $"{loadedNames.Count - baseCount} streaming from IMGs)");
+        });
+    }
+
+    private void LoadWater()
+    {
+        foreach (var e in dat.GetEntries("WATER"))
+        {
+            for (int i = 0; i < e.Args.Length; i++)
+            {
+                string path = dat.ResolveToFilesystem(e.Args[i]);
+                if (!System.IO.File.Exists(path)) continue;
+                Debug.Log($"Loading water: {path}");
+                waterPlanes.Add(new Water(path));
+            }
+        }
+    }
+
+    static void SearchFilesRecursively(string directory, string extension, List<string> results)
     {
         foreach (string file in System.IO.Directory.GetFiles(directory, $"*{extension}"))
-        {
-            filePaths.Add(file);
-        }
-
-        foreach (string subDirectory in System.IO.Directory.GetDirectories(directory))
-        {
-            SearchFilesRecursively(subDirectory, extension, filePaths);
-        }
+            results.Add(file);
+        foreach (string sub in System.IO.Directory.GetDirectories(directory))
+            SearchFilesRecursively(sub, extension, results);
     }
 }

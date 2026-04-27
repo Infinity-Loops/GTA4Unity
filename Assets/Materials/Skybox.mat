@@ -94,9 +94,10 @@ Material:
     - _ClearCoatSmoothness: 0
     - _CloudAbsorption: 1.5
     - _CloudAbsorptionView: 0.75
+    - _CloudAerialPerspective: 0.7
     - _CloudAmbient: 0.15
     - _CloudBottomAltitude: 1500
-    - _CloudCoverage: 0.25
+    - _CloudCoverage: 0.4
     - _CloudCurlScale: 0.00025
     - _CloudCurlStrength: 350
     - _CloudDarknessThreshold: 0.15
@@ -104,8 +105,10 @@ Material:
     - _CloudDensityMultiplier: 4
     - _CloudDensityOffset: 0.05
     - _CloudDetailScale: 4
-    - _CloudDetailWeight: 0.1
-    - _CloudEdgeSoftness: 0.2
+    - _CloudDetailWeight: 0.52
+    - _CloudEdge: 0.1295
+    - _CloudEdgeSoftness: 0.3
+    - _CloudHeight: 0.4
     - _CloudLayer1Altitude: 1500
     - _CloudLayer2Altitude: 2500
     - _CloudLayer3Altitude: 3500
@@ -126,14 +129,16 @@ Material:
     - _CloudPhaseStrength: 1.5
     - _CloudPowderStrength: 0.5
     - _CloudSamples: 24
-    - _CloudScale: 0.0006
+    - _CloudScale: 4
     - _CloudSelfShadowAbsorption: 2
     - _CloudSelfShadowConeRadius: 0.3
     - _CloudSelfShadowDarknessFloor: 0.15
     - _CloudSelfShadowDistance: 250
     - _CloudSelfShadowSamples: 4
+    - _CloudSpeed: 0.01
     - _CloudSunIntensity: 1
     - _CloudTopAltitude: 4000
+    - _CloudWarpStrength: 0.25
     - _CloudWeatherScale: 0.00006
     - _CloudWeatherStrength: 0.85
     - _Cull: 2
@@ -143,12 +148,15 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
+    - _Exposure: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _Metallic: 0
-    - _MieG: 0.76
-    - _MieStrength: 1
+    - _MieG: 0.5
+    - _MieStrength: 2
+    - _MoonGlow: 0.5
+    - _MoonSize: 0.05
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
@@ -159,9 +167,15 @@ Material:
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
+    - _StarBrightness: 1
+    - _StarDensity: 200
+    - _SunDiscSize: 0.997
+    - _SunGlowIntensity: 1.5
     - _SunIntensity: 14
     - _SunSize: 0.025
+    - _SunsetSpread: 1.5
     - _Surface: 0
+    - _TwinkleSpeed: 1
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
@@ -180,10 +194,14 @@ Material:
     - _CloudWindSpeed: {r: 1, g: 0, b: 1, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GroundColor: {r: 0.36999997, g: 0.34999996, b: 0.33999997, a: 1}
+    - _HorizonColor: {r: 0.5683072, g: 0.74497193, b: 0.9339623, a: 1}
+    - _NightAmbient: {r: 0.02, g: 0.02, b: 0.079999976, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _SunConstants: {r: 1.95, g: 1, b: 1.5, a: 0.8}
     - _SunDirection: {r: 0, g: 0, b: 0, a: 0}
     - _SunDiscColor: {r: 1, g: 0.95, b: 0.8, a: 1}
+    - _SunsetColor: {r: 1, g: 0.45, b: 0.14999998, a: 1}
     - _ZenithColor: {r: 0.17999998, g: 0.33999997, b: 0.65, a: 1}
     - _ZenithConstants: {r: 0, g: 0.6, b: 1.5, a: 1}
     - _ZenithTransitionColor: {r: 0.45, g: 0.6, b: 0.85, a: 1}

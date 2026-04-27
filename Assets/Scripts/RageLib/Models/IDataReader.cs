@@ -22,7 +22,7 @@ using System.IO;
 
 namespace RageLib.Models
 {
-    interface IDataReader
+    public interface IDataReader
     {
         void ReadData(BinaryReader br);
     }

@@ -21,8 +21,11 @@ namespace IVUnity.ECS
     {
         public BatchMeshID     MeshId;
         public BatchMaterialID MaterialId;
-        public LocalTransform  LocalTransform; // identity for non-fragment; offset for fragment pieces
-        public AABB            Bounds;         // canonical Unity.Entities bounds (Center/Extents)
+        public LocalTransform  LocalTransform;
+        public AABB            Bounds;
+        #if UNITY_EDITOR
+        public string          ShaderName;
+        #endif
     }
 
     public sealed class ModelCacheEntry

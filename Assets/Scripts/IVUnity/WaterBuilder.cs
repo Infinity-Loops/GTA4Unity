@@ -11,23 +11,22 @@ using File = RageLib.FileSystem.Common.File;
 namespace IVUnity
 {
     /// <summary>
-    /// Builds the world water mesh as a single GameObject.
-    /// Vertices shared by adjacent water planes (matching position AND per-vertex attributes)
-    /// are deduplicated, cutting vertex count by ~50-75% on typical grid layouts. Triangle
-    /// count is unchanged. UVs are position-based so shared corners agree on UV — and the
-    /// water texture flows continuously across the whole surface.
+    /// Engine-faithful water mesh generation.
+    ///
+    /// The engine (FUN_00ad9130) generates a single uniform world-space grid
+    /// for the water surface — NOT per-quad meshes. Water.dat defines coverage
+    /// areas and heights; the grid is uniform regardless of quad boundaries.
+    ///
+    /// Engine layout: 12×12 spatial cell grid (500m cells, 6000m total coverage).
+    /// Each cell references water quads for height/wave lookups.
+    ///
+    /// Our approach: compute AABB of all water planes, generate a uniform grid
+    /// at fixed spacing, query each vertex against water planes for height/params.
     /// </summary>
     public static class WaterBuilder
     {
-        // World-space UV scale. Matches HighPerformanceLoader.CreateWater's value (0.05),
-        // chosen so a typical 10m water plane covers half a texture tile.
+        private const float GridSpacing = 10f;
         private const float UvScale = 0.05f;
-
-        // Vertex equality precision: positions/attributes are quantized to these factors before
-        // being keyed. 100f for position = 1cm precision (well below visible float drift between
-        // adjacent quad corners); 1000f for attributes = 0.001 unit precision.
-        private const float PositionQuantize  = 100f;
-        private const float AttributeQuantize = 1000f;
 
         public static GameObject Build(List<Water> waterPlanes, RealFileSystem fs, Transform parent)
         {
@@ -41,74 +40,206 @@ namespace IVUnity
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             var filter = waterModel.AddComponent<MeshFilter>();
 
-            Mesh waterMesh = new Mesh();
-            waterMesh.indexFormat = IndexFormat.UInt32; // dedup still leaves potentially > 65k verts
-
-            var vertexPoints = new List<Vector3>();
-            var triangles    = new List<int>();
-            var uvs          = new List<Vector2>();
-            var dedup        = new Dictionary<VertexKey, int>(capacity: 16384);
-
-            // Coordinate convention: rotate -90° X (GTA Z-up → Unity Y-up), then negate X to
-            // mirror onto the same axis as the rest of the world. Triangle winding flips
-            // because of the X negation — emit (0,1,2)+(1,3,2) instead of legacy (0,2,1)+(1,2,3).
+            // Collect all transformed plane data for spatial queries
             var fix = Quaternion.Euler(-90f, 0f, 0f);
+            var transformedPlanes = new List<TransformedPlane>();
 
             foreach (Water water in waterPlanes)
             {
                 foreach (var plane in water.planes)
                 {
-                    int i0 = AddOrShareVertex(plane.points[0], fix, vertexPoints, uvs, dedup);
-                    int i1 = AddOrShareVertex(plane.points[1], fix, vertexPoints, uvs, dedup);
-                    int i2 = AddOrShareVertex(plane.points[2], fix, vertexPoints, uvs, dedup);
-                    int i3 = AddOrShareVertex(plane.points[3], fix, vertexPoints, uvs, dedup);
-
-                    triangles.Add(i0); triangles.Add(i1); triangles.Add(i2);
-                    triangles.Add(i1); triangles.Add(i3); triangles.Add(i2);
+                    var tp = new TransformedPlane();
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Vector3 p = fix * plane.points[i].coord;
+                        p.x = -p.x;
+                        tp.corners[i] = p;
+                        tp.points[i] = plane.points[i];
+                    }
+                    tp.ComputeBounds();
+                    transformedPlanes.Add(tp);
                 }
             }
 
-            waterMesh.SetVertices(vertexPoints);
+            if (transformedPlanes.Count == 0)
+            {
+                Debug.LogWarning("[Water] No water planes found");
+                filter.sharedMesh = new Mesh();
+                ApplyWaterMaterial(renderer, fs);
+                return waterModel;
+            }
+
+            // Compute global AABB
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var tp in transformedPlanes)
+            {
+                minX = Mathf.Min(minX, tp.minX);
+                maxX = Mathf.Max(maxX, tp.maxX);
+                minZ = Mathf.Min(minZ, tp.minZ);
+                maxZ = Mathf.Max(maxZ, tp.maxZ);
+            }
+
+            // Snap bounds to grid
+            minX = Mathf.Floor(minX / GridSpacing) * GridSpacing;
+            minZ = Mathf.Floor(minZ / GridSpacing) * GridSpacing;
+            maxX = Mathf.Ceil(maxX / GridSpacing) * GridSpacing;
+            maxZ = Mathf.Ceil(maxZ / GridSpacing) * GridSpacing;
+
+            int gridW = Mathf.RoundToInt((maxX - minX) / GridSpacing) + 1;
+            int gridH = Mathf.RoundToInt((maxZ - minZ) / GridSpacing) + 1;
+
+            // Generate uniform grid — query each vertex against water planes
+            var verts = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var colors = new List<Color>();
+            var triangles = new List<int>();
+            var vertexMap = new int[gridW, gridH];
+
+            // Initialize to -1 (no vertex)
+            for (int x = 0; x < gridW; x++)
+                for (int z = 0; z < gridH; z++)
+                    vertexMap[x, z] = -1;
+
+            // Create vertices only where water exists
+            for (int gz = 0; gz < gridH; gz++)
+            {
+                for (int gx = 0; gx < gridW; gx++)
+                {
+                    float wx = minX + gx * GridSpacing;
+                    float wz = minZ + gz * GridSpacing;
+
+                    if (FindWaterAt(wx, wz, transformedPlanes, out float height, out Water.WaterPoint wp))
+                    {
+                        vertexMap[gx, gz] = verts.Count;
+                        verts.Add(new Vector3(wx, height, wz));
+                        uvs.Add(new Vector2(wx * UvScale, wz * UvScale));
+                        colors.Add(new Color(
+                            Mathf.Clamp01(wp.waveHeight / 2f),
+                            Mathf.Clamp01((wp.speedX + 1f) * 0.5f),
+                            Mathf.Clamp01((wp.speedY + 1f) * 0.5f),
+                            1f));
+                    }
+                }
+            }
+
+            // Generate triangles for cells where all 4 corners have water
+            for (int gz = 0; gz < gridH - 1; gz++)
+            {
+                for (int gx = 0; gx < gridW - 1; gx++)
+                {
+                    int a = vertexMap[gx, gz];
+                    int b = vertexMap[gx + 1, gz];
+                    int c = vertexMap[gx, gz + 1];
+                    int d = vertexMap[gx + 1, gz + 1];
+
+                    if (a < 0 || b < 0 || c < 0 || d < 0) continue;
+
+                    triangles.Add(a); triangles.Add(c); triangles.Add(b);
+                    triangles.Add(b); triangles.Add(c); triangles.Add(d);
+                }
+            }
+
+            Mesh waterMesh = new Mesh();
+            waterMesh.indexFormat = verts.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
+            waterMesh.SetVertices(verts);
             waterMesh.SetUVs(0, uvs);
+            waterMesh.SetColors(colors);
             waterMesh.SetTriangles(triangles, 0);
             waterMesh.RecalculateNormals();
             waterMesh.RecalculateBounds();
 
             filter.sharedMesh = waterMesh;
 
-            int sharedFraction = vertexPoints.Count == 0
-                ? 0
-                : 100 - (vertexPoints.Count * 100 / Mathf.Max(1, dedup.Count == 0 ? 1 : (triangles.Count / 6) * 4));
-            Debug.Log($"[Water] Built mesh: {vertexPoints.Count} unique verts, {triangles.Count / 3} tris " +
-                      $"({(triangles.Count / 6) * 4} non-shared corner reads → ~{sharedFraction}% reuse)");
+            Debug.Log($"[Water] Built uniform grid: {verts.Count} verts, {triangles.Count / 3} tris " +
+                      $"(grid {gridW}×{gridH}, spacing {GridSpacing}m, {transformedPlanes.Count} planes)");
 
             ApplyWaterMaterial(renderer, fs);
             return waterModel;
         }
 
-        /// <summary>
-        /// Apply the world-coord fix to <paramref name="point"/>, then either return the
-        /// existing vertex index for an identical (position + attributes) entry, or append
-        /// a new vertex/UV entry and remember it.
-        /// </summary>
-        private static int AddOrShareVertex(
-            Water.WaterPoint point,
-            Quaternion fix,
-            List<Vector3> verts,
-            List<Vector2> uvs,
-            Dictionary<VertexKey, int> dedup)
+        private static bool FindWaterAt(float wx, float wz, List<TransformedPlane> planes,
+            out float height, out Water.WaterPoint wp)
         {
-            Vector3 p = fix * point.coord;
-            p.x = -p.x;
+            height = 0f;
+            wp = null;
 
-            var key = new VertexKey(p, point.speedX, point.speedY, point.unknown, point.waveHeight);
-            if (dedup.TryGetValue(key, out int existing)) return existing;
+            foreach (var tp in planes)
+            {
+                if (wx < tp.minX || wx > tp.maxX || wz < tp.minZ || wz > tp.maxZ)
+                    continue;
 
-            int idx = verts.Count;
-            verts.Add(p);
-            uvs.Add(new Vector2(p.x * UvScale, p.z * UvScale)); // position-based UV (continuous across planes)
-            dedup.Add(key, idx);
-            return idx;
+                // Water quads are axis-aligned rectangles — AABB check is sufficient
+                BilinearInterp(wx, wz, tp, out height, out wp);
+                return true;
+            }
+            return false;
+        }
+
+        private static bool PointInQuad(float px, float pz, Vector3[] corners)
+        {
+            // Simple check using cross products for convex quad
+            for (int i = 0; i < 4; i++)
+            {
+                var a = corners[i];
+                var b = corners[(i + 1) % 4];
+                float cross = (b.x - a.x) * (pz - a.z) - (b.z - a.z) * (px - a.x);
+                if (cross < -0.01f) return false;
+            }
+            return true;
+        }
+
+        private static void BilinearInterp(float wx, float wz, TransformedPlane tp,
+            out float height, out Water.WaterPoint wp)
+        {
+            // Compute UV within the quad's AABB (approximate for non-rectangular quads)
+            float u = Mathf.InverseLerp(tp.minX, tp.maxX, wx);
+            float v = Mathf.InverseLerp(tp.minZ, tp.maxZ, wz);
+            u = Mathf.Clamp01(u);
+            v = Mathf.Clamp01(v);
+
+            // Bilinear interpolation of corners: 0=topLeft, 1=topRight, 2=bottomLeft, 3=bottomRight
+            height = Mathf.Lerp(
+                Mathf.Lerp(tp.corners[0].y, tp.corners[1].y, u),
+                Mathf.Lerp(tp.corners[2].y, tp.corners[3].y, u), v);
+
+            var p = tp.points;
+            wp = new Water.WaterPoint
+            {
+                coord = new Vector3(wx, height, wz),
+                speedX = Mathf.Lerp(Mathf.Lerp(p[0].speedX, p[1].speedX, u),
+                                    Mathf.Lerp(p[2].speedX, p[3].speedX, u), v),
+                speedY = Mathf.Lerp(Mathf.Lerp(p[0].speedY, p[1].speedY, u),
+                                    Mathf.Lerp(p[2].speedY, p[3].speedY, u), v),
+                waveHeight = Mathf.Lerp(Mathf.Lerp(p[0].waveHeight, p[1].waveHeight, u),
+                                        Mathf.Lerp(p[2].waveHeight, p[3].waveHeight, u), v),
+                unknown = 0f,
+            };
+        }
+
+        private class TransformedPlane
+        {
+            public Vector3[] corners = new Vector3[4];
+            public Water.WaterPoint[] points = new Water.WaterPoint[4];
+            public float minX, maxX, minZ, maxZ;
+
+            public void ComputeBounds()
+            {
+                minX = maxX = corners[0].x;
+                minZ = maxZ = corners[0].z;
+                for (int i = 1; i < 4; i++)
+                {
+                    minX = Mathf.Min(minX, corners[i].x);
+                    maxX = Mathf.Max(maxX, corners[i].x);
+                    minZ = Mathf.Min(minZ, corners[i].z);
+                    maxZ = Mathf.Max(maxZ, corners[i].z);
+                }
+                // Expand by one grid cell so edge vertices/cells aren't clipped
+                minX -= GridSpacing;
+                maxX += GridSpacing;
+                minZ -= GridSpacing;
+                maxZ += GridSpacing;
+            }
         }
 
         private static void ApplyWaterMaterial(MeshRenderer renderer, RealFileSystem fs)
@@ -127,59 +258,15 @@ namespace IVUnity
                 waterTexture.Open(waterTextureStream);
                 var waterImage = waterTexture.Textures[0].Decode();
 
-                var unityMaterial = new Material(Shader.Find("water"));
+                var unityMaterial = new Material(Shader.Find("GTA IV/water"));
                 unityMaterial.SetTexture("_MainTex", waterImage.GetUnityTexture());
                 renderer.material = unityMaterial;
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Water] Texture load failed, using shader-default material: {ex.Message}");
-                var fallback = Shader.Find("water");
+                var fallback = Shader.Find("GTA IV/water");
                 if (fallback != null) renderer.material = new Material(fallback);
-            }
-        }
-
-        /// <summary>
-        /// Equality key for vertex deduplication. Two corners merge only if their position
-        /// AND every per-vertex water attribute match (after small-tolerance quantization).
-        /// Different wave heights / speeds / unknowns mean the planes carry different per-vertex
-        /// shader inputs and must stay separate, so we don't silently lose that data.
-        /// </summary>
-        private readonly struct VertexKey : IEquatable<VertexKey>
-        {
-            private readonly int px, py, pz;
-            private readonly int sx, sy, unk, wh;
-
-            public VertexKey(Vector3 p, float speedX, float speedY, float unknown, float waveHeight)
-            {
-                px  = Mathf.RoundToInt(p.x * PositionQuantize);
-                py  = Mathf.RoundToInt(p.y * PositionQuantize);
-                pz  = Mathf.RoundToInt(p.z * PositionQuantize);
-                sx  = Mathf.RoundToInt(speedX     * AttributeQuantize);
-                sy  = Mathf.RoundToInt(speedY     * AttributeQuantize);
-                unk = Mathf.RoundToInt(unknown    * AttributeQuantize);
-                wh  = Mathf.RoundToInt(waveHeight * AttributeQuantize);
-            }
-
-            public bool Equals(VertexKey o)
-                => px == o.px && py == o.py && pz == o.pz
-                && sx == o.sx && sy == o.sy && unk == o.unk && wh == o.wh;
-
-            public override bool Equals(object obj) => obj is VertexKey o && Equals(o);
-
-            public override int GetHashCode()
-            {
-                unchecked
-                {
-                    int h = px;
-                    h = h * 397 ^ py;
-                    h = h * 397 ^ pz;
-                    h = h * 397 ^ sx;
-                    h = h * 397 ^ sy;
-                    h = h * 397 ^ unk;
-                    h = h * 397 ^ wh;
-                    return h;
-                }
             }
         }
     }

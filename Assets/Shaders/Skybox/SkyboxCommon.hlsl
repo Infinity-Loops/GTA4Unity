@@ -5,106 +5,204 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
 #define SKY_PI 3.14159265359
+#define SKY_TWO_PI 6.28318530718
 
-// Property cbuffer shared across all skybox include files.
+// ============================================================================
+//  Material CBUFFER (SRP Batcher compatible)
+// ============================================================================
+
 CBUFFER_START(UnityPerMaterial)
-    // --- Sun ---
-    float4 _SunDirection;       // xyz toward the sun; w > 0 enables override
-    float  _SunSize;            // angular radius of the visible sun disc (radians)
-    float  _SunIntensity;       // master intensity (drives atmosphere brightness)
-    float4 _SunDiscColor;
+    float4 _ZenithColor;
+    float4 _HorizonColor;
+    float4 _GroundColor;
+    float4 _NightAmbient;
 
-    // --- Atmosphere ---
-    float  _RayleighStrength;
-    float  _MieStrength;
-    float  _MieG;               // Mie phase anisotropy (~0.758 for atmosphere)
+    float4 _SunsetColor;
+    float  _SunsetSpread;
 
-    // --- Cloud layer geometry ---
-    // Each "layer" is a flat altitude plane onto which 2D noise is projected.
-    // Multiple layers at different altitudes give parallax / depth illusion.
-    float  _CloudCoverage;          // 0 = clear, 1 = fully overcast
-    float  _CloudDensity;           // overall opacity multiplier
-    float  _CloudEdgeSoftness;      // half-width of the smoothstep band at the coverage
-                                    // threshold — bigger = softer, fluffier edges; smaller
-                                    // = crisper, harder edges. Smooths the cloud boundary
-                                    // upstream of self-shadow / lighting / alpha so high
-                                    // absorption doesn't produce visibly hard shadow lines.
-    float  _CloudScale;             // base noise frequency (smaller = larger blobs)
-    float  _CloudDetailScale;       // detail noise frequency multiplier
-    float  _CloudDetailWeight;      // strength of detail erosion at edges
-    float4 _CloudWindSpeed;         // xyz drift in m/s
+    float  _SunDiscSize;
+    float  _SunGlowIntensity;
 
-    // --- Guerrilla-style shape controls (Perlin-Worley + weather + curl) ---
-    float  _CloudPerlinWorleyMix;   // 0 = pure Perlin (smooth), 1 = pure inverted Worley
-                                    // (puffy billows). ~0.55 hits the cumulus look.
-    float  _CloudWeatherScale;      // frequency of the large-scale coverage modulation
-                                    // map. Smaller = bigger cluster sizes.
-    float  _CloudWeatherStrength;   // 0 = no clustering (uniform coverage), 1 = full
-                                    // weather-map control over local coverage.
-    float  _CloudCurlScale;         // frequency of the curl-distortion field.
-    float  _CloudCurlStrength;      // amplitude of UV warp from curl noise (in noise-
-                                    // space units). 0 disables the swirl.
+    float  _MoonSize;
+    float  _MoonGlow;
 
-    float  _CloudLayer1Altitude;
-    float  _CloudLayer2Altitude;
-    float  _CloudLayer3Altitude;
-    float  _CloudLayerHeightFalloff; // sharpness of altitude limit (low = soft transition)
+    float  _StarDensity;
+    float  _StarBrightness;
+    float  _TwinkleSpeed;
 
-    // --- Cloud lighting ---
-    float  _CloudLightAbsorption;   // strength of fake self-shadowing from gradient
-    float  _CloudPhaseG;            // forward-scatter Henyey-Greenstein g (sun glow)
-    float  _CloudPhaseGBack;        // backward lobe g (negative recommended) — gives the
-                                    // dim "back-lit" lobe when looking away from the sun.
-    float  _CloudPhaseLobeMix;      // 0 = forward only, 1 = back only. ~0.5 = balanced.
-    float  _CloudPhaseStrength;     // multiplier on phase contribution
-    float  _CloudAmbient;           // ambient floor for shadowed cloud sides
-    float  _CloudSunIntensity;      // brightness of sunlight on clouds, INDEPENDENT of the scene's
-                                    // directional light intensity (clouds inherit the sun's color
-                                    // hue but the magnitude comes from this property)
-    float4 _CloudColor;             // overall cloud tint
-    float4 _CloudShadowColor;       // tint of the shadowed (sun-blocked) side
-    float4 _CloudAmbientSky;        // hemisphere-up ambient (sky bounce)
-    float4 _CloudAmbientGround;     // hemisphere-down ambient (ground bounce — warm at sunset)
-    float  _CloudPowderStrength;    // 0 = no powder (Beer's law only), 1 = full Beer-Powder.
-                                    // Powder darkens thin lit regions, sharpening the
-                                    // perceived edge of lit cloud bodies.
-    float  _CloudMultiScatterA;     // multi-scatter approx — energy retained per octave
-                                    // (0..1). 0 disables multi-scatter; ~0.5 looks great.
-    float  _CloudMultiScatterB;     // multi-scatter approx — extinction reduction per octave.
-    float  _CloudMultiScatterC;     // multi-scatter approx — phase narrowing per octave.
+    float  _CloudHeight;
+    float  _CloudCoverage;
+    float  _CloudSpeed;
+    float  _CloudScale;
+    float  _CloudEdge;
 
-    // --- Self-shadow (internal volumetric feel) ---
-    float  _CloudSelfShadowAbsorption;  // Beer-Lambert coefficient for the 2D lightmarch
-    float  _CloudSelfShadowDistance;    // base step distance per sample (meters)
-    int    _CloudSelfShadowSamples;     // number of samples along the sun direction
-    float  _CloudSelfShadowDarknessFloor; // lower clamp on shadow transmittance
-    float  _CloudSelfShadowConeRadius;  // cone-spread radius (fraction of step distance) —
-                                        // 0 = straight march toward sun, ~0.3 = soft cone.
+    float  _Exposure;
 CBUFFER_END
 
-// Resolve the world-space direction TOWARD the sun.
-float3 GetSunDirection()
+// ============================================================================
+//  Hash functions
+// ============================================================================
+
+float Hash11(float p)
 {
-    if (_SunDirection.w > 0.5)
+    p = frac(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return frac(p);
+}
+
+float Hash21(float2 p)
+{
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
+float Hash31(float3 p)
+{
+    p = frac(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return frac((p.x + p.y) * p.z);
+}
+
+float3 Hash33(float3 p)
+{
+    p = float3(
+        dot(p, float3(127.1, 311.7, 74.7)),
+        dot(p, float3(269.5, 183.3, 246.1)),
+        dot(p, float3(113.5, 271.9, 124.6))
+    );
+    return frac(sin(p) * 43758.5453);
+}
+
+// ============================================================================
+//  Value noise
+// ============================================================================
+
+float ValueNoise2D(float2 p)
+{
+    float2 i = floor(p);
+    float2 f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n00 = Hash21(i);
+    float n10 = Hash21(i + float2(1, 0));
+    float n01 = Hash21(i + float2(0, 1));
+    float n11 = Hash21(i + float2(1, 1));
+
+    return lerp(
+        lerp(n00, n10, f.x),
+        lerp(n01, n11, f.x),
+        f.y);
+}
+
+float ValueNoise3D(float3 p)
+{
+    float3 i = floor(p);
+    float3 f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = Hash31(i);
+    float n100 = Hash31(i + float3(1, 0, 0));
+    float n010 = Hash31(i + float3(0, 1, 0));
+    float n110 = Hash31(i + float3(1, 1, 0));
+    float n001 = Hash31(i + float3(0, 0, 1));
+    float n101 = Hash31(i + float3(1, 0, 1));
+    float n011 = Hash31(i + float3(0, 1, 1));
+    float n111 = Hash31(i + float3(1, 1, 1));
+
+    return lerp(
+        lerp(lerp(n000, n100, f.x), lerp(n010, n110, f.x), f.y),
+        lerp(lerp(n001, n101, f.x), lerp(n011, n111, f.x), f.y),
+        f.z);
+}
+
+// ============================================================================
+//  FBM with rotation matrix between octaves
+// ============================================================================
+
+static const float3x3 FBM_ROT = float3x3(
+     0.00,  1.60,  1.20,
+    -1.60,  0.72, -0.96,
+    -1.20, -0.96,  1.28
+);
+
+float FBM3(float3 p, int octaves)
+{
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < octaves; i++)
     {
-        return normalize(_SunDirection.xyz);
+        value += amplitude * ValueNoise3D(p);
+        p = mul(FBM_ROT, p) * 1.1;
+        amplitude *= 0.5;
     }
-    return normalize(_MainLightPosition.xyz);
+    return value;
 }
 
-float3 GetSunColor()
+float FBM6(float3 p)
 {
-    return _MainLightColor.rgb;
+    float f = 0.0;
+    float w = 0.5;
+    for (int i = 0; i < 6; i++)
+    {
+        f += w * ValueNoise3D(p);
+        p = mul(FBM_ROT, p) * 1.1;
+        w *= 0.5;
+    }
+    return f;
 }
 
-// Cloud-specific sunlight color. Returns the sun's COLOR HUE (so sunset oranges
-// still tint the clouds correctly) but with magnitude controlled exclusively by
-// _CloudSunIntensity — independent of the scene directional light's brightness.
-float3 GetCloudSunLight()
+// ============================================================================
+//  Phase functions
+// ============================================================================
+
+float HGPhase(float cosTheta, float g)
 {
-    float3 c = GetSunColor();
-    float maxC = max(max(c.r, c.g), max(c.b, 1e-5));
-    return (c / maxC) * _CloudSunIntensity;
+    float g2 = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    return (1.0 - g2) / (4.0 * SKY_PI * pow(max(denom, 0.0001), 1.5));
+}
+
+float DualHGPhase(float cosTheta, float g1, float g2, float blend)
+{
+    return lerp(HGPhase(cosTheta, g1), HGPhase(cosTheta, g2), blend);
+}
+
+float RayleighPhase(float mu)
+{
+    return 3.0 / (16.0 * SKY_PI) * (1.0 + mu * mu);
+}
+
+float MiePhase(float mu, float g)
+{
+    float gg = g * g;
+    return (3.0 / (8.0 * SKY_PI)) * ((1.0 - gg) * (mu * mu + 1.0))
+         / (pow(1.0 + gg - 2.0 * mu * g, 1.5) * (2.0 + gg));
+}
+
+// ============================================================================
+//  Ray-sphere intersection
+// ============================================================================
+
+float2 RaySphereIntersect(float3 r0, float3 rd, float sr)
+{
+    float a = dot(rd, rd);
+    float b = 2.0 * dot(rd, r0);
+    float c = dot(r0, r0) - sr * sr;
+    float d = b * b - 4.0 * a * c;
+    if (d < 0.0) return float2(1e5, -1e5);
+    d = sqrt(d);
+    return float2((-b - d) / (2.0 * a), (-b + d) / (2.0 * a));
+}
+
+// ============================================================================
+//  Utility
+// ============================================================================
+
+float SkyRemap(float value, float low1, float high1, float low2, float high2)
+{
+    return low2 + (value - low1) * (high2 - low2) / (high1 - low1);
 }
 
 #endif // SKYBOX_COMMON_INCLUDED

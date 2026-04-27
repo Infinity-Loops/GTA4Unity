@@ -34,9 +34,6 @@ namespace IVUnity.ECS
         private Transform focusTarget;
 
         [Header("Resolver")]
-        [Tooltip("Use V2 resolver (per-model TXD context, lazy WTD load — mirrors engine pgDictionary chain). " +
-                 "When false, uses the legacy global-scan MaterialTextureResolver.")]
-        public bool useV2Resolver = false;
 
         public ModelCatalog Catalog     { get; private set; }
         public MeshCache    MeshCache   { get; private set; }
@@ -86,21 +83,8 @@ namespace IVUnity.ECS
             await gameLoader.LoadGameFiles(() => { /* legacy callback; ECS finalizes below */ });
 
             // --- 4. Resolver init ---
-            // V2: ref-counted TxdSlot store + per-submesh material build, no global caches.
-            //     Engine-faithful — mirrors CTxdStore + pgDictionary parent linking.
-            // V1: legacy global scan of every WTD/WDR builds a flat name → texture index.
-            //     Slow startup, sticky shared materials. Kept for fallback comparisons.
-            if (useV2Resolver)
-            {
-                LoadingScreen.AdvanceProgress("Configuring resolver V2...", 0);
-                IVUnity.Resolver.MaterialTextureResolverV2.Configure(gameLoader);
-            }
-            else
-            {
-                LoadingScreen.AdvanceProgress("Indexing game assets...", 0);
-                IVUnity.Resolver.MaterialTextureResolverV2.Reset();
-                await IVUnity.MaterialTextureResolver.Initialize(gameLoader);
-            }
+            LoadingScreen.AdvanceProgress("Configuring material resolver...", 0);
+            IVUnity.Resolver.MaterialResolver.Configure(gameLoader);
 
             // --- 5..8 on main thread ---
             BakeAndFinalize();

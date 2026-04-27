@@ -17,15 +17,23 @@ namespace IVUnity.ECS
         public float StreamInDistance;
         public float StreamOutDistance;
 
+        /// <summary>
+        /// Multiplier applied to every entity's IDE draw distance during visibility checks.
+        /// Engine equivalent: *(float*)(renderCtx + 0x934) in FUN_00aebff0.
+        /// Engine uses dynamic 1.0-1.5 based on platform/quality; default 1.5 for PC-equivalent.
+        /// </summary>
+        public float LodDistanceScale;
+
         public static StreamingConfig Default => new StreamingConfig
         {
-            CellSize              = 100f,  // HighPerformanceLoader's SpatialGrid also uses 100m cells
+            CellSize              = 100f,
             MaxLoadsPerFrame      = 32,
             MaxUploadsPerFrame    = 8,
             MaxPromotionsPerFrame = 64,
             MeshCacheSizeMB       = 2048,
-            StreamInDistance      = 300f,  // == HighPerformanceLoader.streamDistance
-            StreamOutDistance     = 500f,  // == HighPerformanceLoader.cullDistance
+            StreamInDistance      = 300f,
+            StreamOutDistance     = 500f,
+            LodDistanceScale      = 1.5f,
         };
     }
 }

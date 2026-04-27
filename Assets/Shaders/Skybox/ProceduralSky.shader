@@ -2,62 +2,38 @@ Shader "Skybox/ProceduralSky"
 {
     Properties
     {
+        [Header(Sky)]
+        _ZenithColor       ("Zenith Color",        Color)              = (0.25, 0.5, 0.95, 1)
+        _HorizonColor      ("Horizon Color",       Color)              = (0.65, 0.82, 1.0, 1)
+        _GroundColor        ("Ground Color",        Color)              = (0.37, 0.35, 0.34, 1)
+        _NightAmbient       ("Night Ambient Color", Color)              = (0.02, 0.02, 0.08, 1)
+
+        [Header(Sunset)]
+        _SunsetColor        ("Sunset Color",        Color)              = (1.0, 0.45, 0.15, 1)
+        _SunsetSpread       ("Sunset Spread",       Range(0.5, 4.0))    = 1.5
+
         [Header(Sun)]
-        _SunDirection            ("Sun Direction Override (xyz, w>0 to enable)", Vector) = (0, 0, 0, 0)
-        _SunSize                 ("Sun Angular Radius (radians)", Range(0.001, 0.2)) = 0.025
-        _SunIntensity            ("Sun Intensity",                Range(1, 50))      = 22.0
-        _SunDiscColor            ("Sun Disc Color",               Color)             = (1.0, 0.95, 0.85, 1.0)
+        _SunDiscSize        ("Sun Disc Size",       Range(0.99, 0.9999))= 0.997
+        _SunGlowIntensity   ("Sun Glow Intensity",  Range(0.0, 3.0))    = 1.5
 
-        [Header(Atmosphere)]
-        _RayleighStrength        ("Rayleigh Strength",            Range(0, 5))       = 1.0
-        _MieStrength             ("Mie Strength",                 Range(0, 5))       = 1.0
-        _MieG                    ("Mie Anisotropy g",             Range(-0.99, 0.99))= 0.758
+        [Header(Moon)]
+        _MoonSize           ("Moon Size",           Range(0.01, 0.15))  = 0.05
+        _MoonGlow           ("Moon Glow",           Range(0.0, 2.0))    = 0.5
 
-        [Header(Cloud Shape)]
-        _CloudCoverage           ("Coverage",                     Range(0, 1))       = 0.5
-        _CloudDensity            ("Density",                      Range(0, 5))       = 1.2
-        _CloudEdgeSoftness       ("Edge Softness",                Range(0.005, 0.4)) = 0.06
-        _CloudScale              ("Base Noise Scale",             Float)             = 0.0008
-        _CloudDetailScale        ("Detail Noise Scale Multiplier",Range(1, 10))      = 4.5
-        _CloudDetailWeight       ("Detail Erosion Weight",        Range(0, 1))       = 0.45
-        _CloudWindSpeed          ("Wind Speed (xyz m/s)",         Vector)            = (4.0, 0.0, 2.0, 0.0)
+        [Header(Stars)]
+        _StarDensity        ("Star Density",        Range(50, 500))     = 200
+        _StarBrightness     ("Star Brightness",     Range(0.0, 3.0))    = 1.0
+        _TwinkleSpeed       ("Twinkle Speed",       Range(0.0, 5.0))    = 1.0
 
-        [Header(Cloud Shape Guerrilla)]
-        _CloudPerlinWorleyMix    ("Perlin to Worley Mix",         Range(0, 1))       = 0.55
-        _CloudWeatherScale       ("Weather Map Scale",            Float)             = 0.00006
-        _CloudWeatherStrength    ("Weather Map Strength",         Range(0, 1))       = 0.85
-        _CloudCurlScale          ("Curl Distortion Scale",        Float)             = 0.00025
-        _CloudCurlStrength       ("Curl Distortion Strength",     Range(0, 2000))    = 350
+        [Header(Clouds)]
+        _CloudHeight        ("Cloud Height",        Range(0.1, 1.0))    = 0.4
+        _CloudCoverage      ("Cloud Coverage",      Range(0.0, 1.0))    = 0.5
+        _CloudSpeed         ("Cloud Speed",         Range(0.0, 0.1))    = 0.01
+        _CloudScale         ("Cloud Scale",         Range(0.5, 8.0))    = 3.0
+        _CloudEdge          ("Cloud Edge Softness", Range(0.01, 0.3))   = 0.06
 
-        [Header(Cloud Layers)]
-        _CloudLayer1Altitude     ("Layer 1 Altitude (m)",         Float)             = 1500
-        _CloudLayer2Altitude     ("Layer 2 Altitude (m)",         Float)             = 2500
-        _CloudLayer3Altitude     ("Layer 3 Altitude (m)",         Float)             = 3500
-        _CloudLayerHeightFalloff ("Layer Height Falloff",         Range(0, 1))       = 0.3
-
-        [Header(Cloud Lighting)]
-        _CloudSunIntensity       ("Sun Brightness on Clouds",     Range(0, 10))      = 1.4
-        _CloudLightAbsorption    ("Light Absorption",             Range(0.05, 1))    = 0.3
-        _CloudPhaseG             ("Phase Forward Scatter g",      Range(0, 0.99))    = 0.72
-        _CloudPhaseGBack         ("Phase Back Scatter g",         Range(-0.99, 0))   = -0.25
-        _CloudPhaseLobeMix       ("Phase Lobe Mix (Fwd to Back)", Range(0, 1))       = 0.35
-        _CloudPhaseStrength      ("Phase Strength",               Range(0, 5))       = 1.6
-        _CloudAmbient            ("Ambient Floor",                Range(0, 2))       = 0.55
-        _CloudColor              ("Cloud Tint",                   Color)             = (1.0, 1.0, 1.0, 1.0)
-        _CloudShadowColor        ("Cloud Shadow Color",           Color)             = (0.42, 0.50, 0.62, 1.0)
-        _CloudAmbientSky         ("Ambient Sky (top)",            Color)             = (0.55, 0.68, 0.85, 1.0)
-        _CloudAmbientGround      ("Ambient Ground (bottom)",      Color)             = (0.65, 0.55, 0.45, 1.0)
-        _CloudPowderStrength     ("Beer-Powder Strength",         Range(0, 1))       = 0.6
-        _CloudMultiScatterA      ("Multi-Scatter Energy (a)",     Range(0, 1))       = 0.55
-        _CloudMultiScatterB      ("Multi-Scatter Extinction (b)", Range(0, 1))       = 0.55
-        _CloudMultiScatterC      ("Multi-Scatter Phase (c)",      Range(0, 1))       = 0.55
-
-        [Header(Cloud Self Shadow)]
-        _CloudSelfShadowAbsorption    ("Self Shadow Absorption",       Range(0, 5))    = 1.7
-        _CloudSelfShadowDistance      ("Self Shadow Step Distance (m)",Range(50, 1500))= 220
-        _CloudSelfShadowSamples       ("Self Shadow Samples",          Range(1, 8))    = 6
-        _CloudSelfShadowDarknessFloor ("Self Shadow Darkness Floor",   Range(0, 1))    = 0.12
-        _CloudSelfShadowConeRadius    ("Self Shadow Cone Radius",      Range(0, 1))    = 0.3
+        [Header(Exposure)]
+        _Exposure           ("Exposure",            Range(0.1, 5.0))    = 1.5
     }
 
     SubShader
@@ -83,9 +59,10 @@ Shader "Skybox/ProceduralSky"
             #pragma fragment frag
             #pragma target 3.5
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "SkyboxCommon.hlsl"
             #include "SkyboxAtmosphere.hlsl"
+            #include "SkyboxStars.hlsl"
+            #include "SkyboxMoon.hlsl"
             #include "SkyboxClouds.hlsl"
 
             struct Attributes
@@ -103,32 +80,63 @@ Shader "Skybox/ProceduralSky"
             {
                 Varyings OUT;
                 OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.viewDir    = IN.positionOS.xyz;
+                OUT.viewDir    = mul((float3x3)UNITY_MATRIX_M, IN.positionOS.xyz);
                 return OUT;
             }
 
             half4 frag(Varyings IN) : SV_Target
             {
                 float3 viewDir = normalize(IN.viewDir);
-                float3 sunDir  = GetSunDirection();
-                float3 sunCol  = GetSunColor();
+                float3 sunDir  = normalize(_MainLightPosition.xyz);
+                float sunAltitude = sunDir.y;
 
-                // Atmosphere — single scattering through the planet's air shell.
-                float3 sky = ComputeAtmosphere(viewDir, sunDir);
-                // Visible sun disc.
-                sky += ComputeSunDisc(viewDir, sunDir);
+                AtmosphereResult atmo = ComputeFullAtmosphere(viewDir, sunDir,
+                    _ZenithColor.rgb, _HorizonColor.rgb, _GroundColor.rgb,
+                    _NightAmbient.rgb, _SunsetColor.rgb, _SunsetSpread);
 
-                // Clouds — 2D layered, projected onto altitude planes.
-                CloudResult cloud = RenderClouds(viewDir, sunDir, sunCol);
+                float3 skyColor = atmo.color;
 
-                // Premultiplied composition.
-                float3 color = sky * cloud.transmittance + cloud.scatteredLight;
+                float skyFade = smoothstep(-0.05, 0.05, viewDir.y);
 
-                return half4(color, 1.0);
+                // Stars + Moon (night/twilight).
+                if (skyFade > 0.001 && sunAltitude < 0.1)
+                {
+                    float3 moonDirNorm = normalize(-sunDir);
+
+                    float3 stars = ComputeStars(viewDir, sunAltitude,
+                        _StarDensity, _StarBrightness, _TwinkleSpeed, _Time.y);
+                    stars *= 1.0 - MoonMask(viewDir, moonDirNorm, _MoonSize);
+                    skyColor += stars * skyFade;
+
+                    float3 moon = ComputeMoon(viewDir, sunDir, sunAltitude,
+                        moonDirNorm, _MoonSize, _MoonGlow);
+                    skyColor += moon * skyFade;
+                }
+
+                // Clouds.
+                if (viewDir.y > 0.005)
+                {
+                    float4 clouds = ComputeClouds(viewDir, sunDir, sunAltitude,
+                        _CloudHeight, _CloudCoverage, _CloudSpeed, _CloudEdge,
+                        _CloudScale, _Time.y);
+                    skyColor = lerp(skyColor, clouds.rgb, clouds.a);
+                }
+
+                // Sun disc.
+                if (skyFade > 0.001)
+                {
+                    float3 sunDisc = ComputeSunDisc(viewDir, sunDir,
+                        _SunDiscSize, _SunGlowIntensity);
+                    skyColor += sunDisc * skyFade;
+                }
+
+                // Tonemap.
+                skyColor = 1.0 - exp(-skyColor * _Exposure);
+
+                return half4(saturate(skyColor), 1.0);
             }
             ENDHLSL
         }
     }
 
-    Fallback Off
 }

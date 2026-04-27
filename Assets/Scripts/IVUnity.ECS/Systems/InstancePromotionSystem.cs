@@ -26,6 +26,7 @@ namespace IVUnity.ECS
         private MeshCache cache;
         private EntityArchetype childArchetype;
         private RenderFilterSettings filterSettings;
+        private RenderFilterSettings filterSettingsNoShadow;
 
         public void Configure(MeshCache cache)
         {
@@ -50,17 +51,26 @@ namespace IVUnity.ECS
                 ComponentType.ReadWrite<WorldToLocal_Tag>(),
                 ComponentType.ReadWrite<PerInstanceCullingTag>(),
                 ComponentType.ReadWrite<BlendProbeTag>(),              // from LightProbeUsage.BlendProbes
+                ComponentType.ReadWrite<StippleAlpha>(),               // LOD crossfade
                 ComponentType.ReadWrite<RenderFilterSettings>(),       // shared
                 ComponentType.ChunkComponent<ChunkWorldRenderBounds>(),
                 ComponentType.ChunkComponent<EntitiesGraphicsChunkInfo>());
 
-            // Cached filter settings — applied once per batch via SetSharedComponent.
             filterSettings = new RenderFilterSettings
             {
                 Layer              = 0,
                 RenderingLayerMask = 0xffffffff,
                 MotionMode         = MotionVectorGenerationMode.Camera,
                 ShadowCastingMode  = ShadowCastingMode.On,
+                ReceiveShadows     = true,
+                StaticShadowCaster = false,
+            };
+            filterSettingsNoShadow = new RenderFilterSettings
+            {
+                Layer              = 0,
+                RenderingLayerMask = 0xffffffff,
+                MotionMode         = MotionVectorGenerationMode.Camera,
+                ShadowCastingMode  = ShadowCastingMode.Off,
                 ReceiveShadows     = true,
                 StaticShadowCaster = false,
             };
@@ -95,9 +105,13 @@ namespace IVUnity.ECS
                 // so the first frame doesn't render at origin before transform propagation.
                 var parentL2W = EntityManager.GetComponentData<LocalToWorld>(root);
 
+                if (entry.SubMeshes == null || entry.SubMeshes.Length == 0)
+                {
+                    Debug.LogWarning($"[Promotion] 0x{modelRef.ModelHash:X8} has 0 sub-meshes — invisible entity");
+                }
+
                 foreach (var sub in entry.SubMeshes)
                 {
-                    // One structural change per child: create with the full archetype.
                     var child = EntityManager.CreateEntity(childArchetype);
 
                     // Non-structural setters — fast.
@@ -105,6 +119,7 @@ namespace IVUnity.ECS
                     EntityManager.SetComponentData(child, new Parent { Value = root });
                     EntityManager.SetComponentData(child, new MaterialMeshInfo(sub.MaterialId, sub.MeshId, (ushort)0));
                     EntityManager.SetComponentData(child, new RenderBounds { Value = sub.Bounds });
+                    EntityManager.SetComponentData(child, new StippleAlpha { Value = 1.0f });
                     EntityManager.SetComponentData(child, new LocalToWorld
                     {
                         Value = math.mul(parentL2W.Value, sub.LocalTransform.ToMatrix()),
@@ -113,7 +128,15 @@ namespace IVUnity.ECS
                     // Shared component set moves the entity into the chunk keyed by filterSettings.
                     // All children share the same value, so they all land in one chunk (after the
                     // first one creates it) — subsequent moves are cheap chunk-pointer updates.
-                    EntityManager.SetSharedComponent(child, filterSettings);
+                    bool isLod = EntityManager.HasComponent<LodTag>(root);
+                    EntityManager.SetSharedComponent(child, isLod ? filterSettingsNoShadow : filterSettings);
+
+                    #if UNITY_EDITOR
+                    EntityManager.AddComponentData(child, new DebugShaderName
+                    {
+                        Value = new Unity.Collections.FixedString64Bytes(sub.ShaderName ?? "unknown")
+                    });
+                    #endif
                 }
 
                 entry.RefCount++;

@@ -13,7 +13,7 @@ using UnityEngine.Rendering;
 
 namespace RageLib.Models
 {
-    internal static class ModelGenerator
+    public static class ModelGenerator
     {
         private static readonly Dictionary<string, RageUnityTexture> textureCache = new Dictionary<string, RageUnityTexture>();
 
@@ -114,7 +114,7 @@ namespace RageLib.Models
             return GenerateModel(new Drawable(drawableModel), textures);
         }
 
-        internal static ModelNode GenerateModel(Drawable drawable, TextureFile[] textures)
+        public static ModelNode GenerateModel(Drawable drawable, TextureFile[] textures)
         {
             var materials = new RageMaterial[drawable.Materials.Count];
             //Debug.Log($"Material Count: {materials.Length}");
@@ -322,9 +322,7 @@ namespace RageLib.Models
                     }
                     if (HasTextureCoordinates)
                     {
-                        // Flip U coordinate to compensate for X-axis flip in world space
-                        var uv = Vertices[i].TextureCoordinates;
-                        TextureCoordinates[i] = new Vector2(1.0f - uv.x, uv.y);
+                        TextureCoordinates[i] = Vertices[i].TextureCoordinates;
                     }
                     if (HasColors)
                     {

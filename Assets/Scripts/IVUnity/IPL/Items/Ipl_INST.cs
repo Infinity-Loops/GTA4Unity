@@ -82,19 +82,8 @@ public class Ipl_INST : IPL_Item
         long tempHash = reader.ReadUInt();
         hash = (int)tempHash;
 
-        // Use comprehensive hash resolver
-        name = IVUnity.ComprehensiveHashResolver.ResolveHash((uint)tempHash);
-
-        // Fallback to old method if comprehensive resolver not initialized
-        if (name.StartsWith("0x"))
-        {
-            string hashStr = tempHash.ToString();
-            string resolved = ini.GetValue<string>("Hashes", hashStr);
-            if (resolved != null)
-            {
-                name = resolved;
-            }
-        }
+        string resolved = ini.GetValue<string>("Hashes", tempHash.ToString());
+        name = resolved ?? $"0x{tempHash:x8}";
 
         unknown1 = reader.ReadInt();
         lod      = reader.ReadInt();

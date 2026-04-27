@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using IVUnity.Resolver; // MaterialTextureResolverV2 / TxdStore
+using IVUnity.Resolver; // MaterialResolver / TxdStore
 using RageLib.Models;
 using RageLib.Textures;
 using UnityEngine;
@@ -68,7 +68,7 @@ namespace IVUnity.ECS
             // --- Model ---
             try
             {
-                result.ModelFile = OpenModelByExtension(entry.ModelFileName, entry.ModelFile.GetData(), out var reason);
+                result.ModelFile = OpenModelByExtension(entry, entry.ModelFile.GetData(), out var reason);
                 if (result.ModelFile == null)
                 {
                     result.Failed = true;
@@ -90,14 +90,14 @@ namespace IVUnity.ECS
             // MainThreadMeshUploadSystem stores ChainSlots() on the cache entry so eviction
             // can Release them. Engine equivalent of CStreaming::AddRef on each slot in the
             // model's dictionary chain.
-            if (MaterialTextureResolverV2.IsActive && MaterialTextureResolverV2.TxdStore != null)
+            if (MaterialResolver.IsActive && MaterialResolver.TxdStore != null)
             {
                 string txdName = entry.Definition?.textureName;
                 if (!string.IsNullOrEmpty(txdName))
                 {
                     try
                     {
-                        var leaf = MaterialTextureResolverV2.TxdStore.Acquire(txdName);
+                        var leaf = MaterialResolver.TxdStore.Acquire(txdName);
                         if (leaf != null)
                         {
                             result.TxdLeaf = leaf;
@@ -130,18 +130,10 @@ namespace IVUnity.ECS
             return result;
         }
 
-        /// <summary>
-        /// Dispatch by file extension and return a fully parsed IModelFile, or null if the
-        /// extension is unsupported (reason written out). Mirrors the extension handling in
-        /// HighPerformanceLoader.GetOrLoadModelData:
-        ///   .wdr → ModelFile          (standard drawable)
-        ///   .wft → ModelFragTypeFile  (fragment)
-        ///   .wdd → reject             (dictionary; HighPerformanceLoader also doesn't pick from it)
-        ///   .wbn/.wbd → reject        (collision meshes; out of scope per design spec)
-        /// </summary>
-        private static IModelFile OpenModelByExtension(string fileName, byte[] data, out string reason)
+        private static IModelFile OpenModelByExtension(ModelCatalog.Entry entry, byte[] data, out string reason)
         {
             reason = null;
+            string fileName = entry.ModelFileName;
 
             if (string.IsNullOrEmpty(fileName))
             {
@@ -171,12 +163,43 @@ namespace IVUnity.ECS
                 }
 
                 case ".wdd":
-                    // Drawable dictionaries hold LOD variants packed together. Until we wire
-                    // a real LOD selector (pick the right sub-drawable based on distance and
-                    // the IPL hash), rendering the whole dictionary just stacks every LOD on
-                    // top of itself. Disabled — re-enable alongside a WddDrawableSelector.
-                    reason = ".wdd (LOD dictionary) disabled — needs proper sub-drawable selection";
-                    return null;
+                {
+                    // WDD = pgDictionary<DrawableModel>. Contains multiple drawables keyed
+                    // by name hash. The engine selects the right entry via bsearch on the
+                    // hash table (sub_6596B0 in IV binary). We do the same: hash the model
+                    // name from the IDE entry, find it in NameHashes, return a wrapper that
+                    // exposes just that single drawable as an IModelFile.
+                    var dict = new ModelDictionaryFile();
+                    using (var stream = new MemoryStream(data, writable: false))
+                    {
+                        dict.Open(stream);
+                    }
+
+                    string modelName = entry.Definition?.modelName;
+                    if (string.IsNullOrEmpty(modelName))
+                    {
+                        reason = ".wdd has no model name to select entry";
+                        dict.Dispose();
+                        return null;
+                    }
+
+                    uint targetHash = RageLib.Common.Hasher.Hash(modelName);
+                    var hashes = dict.File.Data.NameHashes;
+                    int index = -1;
+                    for (int i = 0; i < hashes.Count; i++)
+                    {
+                        if (hashes[i] == targetHash) { index = i; break; }
+                    }
+
+                    if (index < 0 || index >= dict.File.Data.Entries.Count)
+                    {
+                        reason = $".wdd '{fileName}' has no entry for '{modelName}' (hash 0x{targetHash:X8})";
+                        dict.Dispose();
+                        return null;
+                    }
+
+                    return new WddSingleEntry(dict, index);
+                }
 
                 case ".wbn":
                 case ".wbd":
@@ -187,6 +210,33 @@ namespace IVUnity.ECS
                     reason = $"Unsupported model extension '{ext}'";
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Wraps a ModelDictionaryFile exposing only one specific entry as an IModelFile.
+        /// Keeps the dictionary alive (owns it) so the drawable's data stays valid.
+        /// </summary>
+        private sealed class WddSingleEntry : IModelFile
+        {
+            private readonly ModelDictionaryFile _dict;
+            private readonly int _index;
+
+            public WddSingleEntry(ModelDictionaryFile dict, int index)
+            {
+                _dict = dict;
+                _index = index;
+            }
+
+            public void Open(string filename) { }
+            public void Open(Stream stream) { }
+
+            public ModelNode GetModel(TextureFile[] textures)
+            {
+                var drawable = new RageLib.Models.Data.Drawable(_dict.File.Data.Entries[_index]);
+                return ModelGenerator.GenerateModel(drawable, textures);
+            }
+
+            public void Dispose() => _dict.Dispose();
         }
 
         public void Dispose()

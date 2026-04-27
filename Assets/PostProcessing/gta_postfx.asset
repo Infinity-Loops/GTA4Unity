@@ -15,7 +15,7 @@ MonoBehaviour:
   active: 1
   temperature:
     m_OverrideState: 1
-    m_Value: 46.5
+    m_Value: 21
   tint:
     m_OverrideState: 0
     m_Value: 0
@@ -35,6 +35,7 @@ MonoBehaviour:
   - {fileID: 5841792429311776964}
   - {fileID: 1406645674408712304}
   - {fileID: -1527206586036648762}
+  - {fileID: 3406243418387956839}
 --- !u!114 &1406645674408712304
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -50,12 +51,12 @@ MonoBehaviour:
   active: 1
   postExposure:
     m_OverrideState: 1
-    m_Value: 0.5
+    m_Value: 1
   contrast:
     m_OverrideState: 0
     m_Value: 0
   colorFilter:
-    m_OverrideState: 0
+    m_OverrideState: 1
     m_Value: {r: 0.99705917, g: 1, b: 0.9103774, a: 1}
   hueShift:
     m_OverrideState: 0
@@ -63,6 +64,28 @@ MonoBehaviour:
   saturation:
     m_OverrideState: 0
     m_Value: 50
+--- !u!114 &3406243418387956839
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5485954d14dfb9a4c8ead8edb0ded5b1, type: 3}
+  m_Name: LiftGammaGain
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.LiftGammaGain
+  active: 1
+  lift:
+    m_OverrideState: 1
+    m_Value: {x: 1, y: 1, z: 1, w: 0}
+  gamma:
+    m_OverrideState: 1
+    m_Value: {x: 1, y: 1, z: 1, w: -0.26218295}
+  gain:
+    m_OverrideState: 1
+    m_Value: {x: 1, y: 1, z: 1, w: 1}
 --- !u!114 &5841792429311776964
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -78,7 +101,7 @@ MonoBehaviour:
   active: 1
   mode:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 1
   neutralHDRRangeReductionMode:
     m_OverrideState: 0
     m_Value: 2

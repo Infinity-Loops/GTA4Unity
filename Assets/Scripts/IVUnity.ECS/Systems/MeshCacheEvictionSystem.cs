@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using IVUnity.Resolver;           // MaterialTextureResolverV2 / TxdStore
+using IVUnity.Resolver;           // MaterialResolver / TxdStore
 using Unity.Entities;
 using Unity.Rendering;           // EntitiesGraphicsSystem
 using UnityEngine;
@@ -20,7 +20,7 @@ namespace IVUnity.ECS
     /// orphaned by fast travel can leave a model permanently stuck (state Failed/Loading,
     /// dispatch refuses to retry), so revisiting the area never re-loads the model.
     ///
-    /// Materials: V2 dedupes by texture-reference tuple in MaterialTextureResolverV2 — many
+    /// Materials: V2 dedupes by texture-reference tuple in MaterialResolver — many
     /// models can hold the same BatchMaterialID, so we never unregister here. Same for V1.
     ///
     /// TXD slots: V2 cache entries hold a TxdChain ref-counted at load time; we Release it
@@ -91,7 +91,7 @@ namespace IVUnity.ECS
                 }
             }
 
-            var v2Store = MaterialTextureResolverV2.IsActive ? MaterialTextureResolverV2.TxdStore : null;
+            var v2Store = MaterialResolver.IsActive ? MaterialResolver.TxdStore : null;
 
             foreach (var hash in toRemove)
             {

@@ -24,8 +24,8 @@ namespace IVUnity.ECS
 
         protected override void OnUpdate()
         {
-            if (!MaterialTextureResolverV2.IsActive) return;
-            var store = MaterialTextureResolverV2.TxdStore;
+            if (!MaterialResolver.IsActive) return;
+            var store = MaterialResolver.TxdStore;
             if (store == null) return;
 
             float now = UnityEngine.Time.realtimeSinceStartup;

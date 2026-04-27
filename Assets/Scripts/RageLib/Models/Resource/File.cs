@@ -25,7 +25,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Models.Resource
 {
-    class File<T> : IDisposable where T : IFileAccess, IDataReader, IDisposable, new()
+    public class File<T> : IDisposable where T : IFileAccess, IDataReader, IDisposable, new()
     {
         public T Data { get; private set; }
 

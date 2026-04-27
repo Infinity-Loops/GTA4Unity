@@ -1,6 +1,5 @@
 using System.Collections.Generic;
-using IVUnity; // MaterialTextureResolver
-using IVUnity.Resolver; // MaterialTextureResolverV2
+using IVUnity.Resolver; // MaterialResolver
 using RageLib.Models;
 using RageLib.Textures;
 using Unity.Entities;
@@ -132,39 +131,19 @@ namespace IVUnity.ECS
                             if (!specularResolved && !string.IsNullOrEmpty(f.Material.specularTextureName))
                                 LogMissingTexture(result.Hash, f.Material.specularTextureName, "specular");
 
-                            if (MaterialTextureResolverV2.IsActive)
+                            if (f.Material.layerTextures != null && f.Material.layerTextures.Length > 1)
                             {
-                                // Engine-faithful: one fresh Material per submesh, populated
-                                // with the textures already resolved through this model's
-                                // TxdSlot chain. No global material cache → no order-dependent
-                                // material pollution between cells.
-                                if (f.Material.layerTextures != null && f.Material.layerTextures.Length > 1)
+                                var layers = new Texture2D[f.Material.layerTextures.Length];
+                                for (int li = 0; li < layers.Length; li++)
                                 {
-                                    // Multi-layer terrain — collect resolved Texture2Ds for each
-                                    // layer and route to the matching gta_terrain_va_3lyr/4lyr
-                                    // shader. ModelGenerator already populated layerTextures only
-                                    // for shaders that need them.
-                                    var layers = new Texture2D[f.Material.layerTextures.Length];
-                                    for (int li = 0; li < layers.Length; li++)
-                                    {
-                                        var lt = f.Material.layerTextures[li];
-                                        layers[li] = HasRealPixels(lt) ? lt.GetUnityTexture() : null;
-                                    }
-                                    mat = MaterialTextureResolverV2.BuildTerrain(f.Material.shaderName, layers);
+                                    var lt = f.Material.layerTextures[li];
+                                    layers[li] = HasRealPixels(lt) ? lt.GetUnityTexture() : null;
                                 }
-                                else
-                                {
-                                    mat = MaterialTextureResolverV2.Build(f.Material.shaderName, embedded, normal, specular);
-                                }
+                                mat = MaterialResolver.BuildTerrain(f.Material.shaderName, layers);
                             }
                             else
                             {
-                                mat = MaterialTextureResolver.GetOrCreateSharedMaterial(
-                                    f.Material.shaderName,
-                                    f.Material.textureName,
-                                    embedded,
-                                    f.Material.normalTextureName, normal,
-                                    f.Material.specularTextureName, specular);
+                                mat = MaterialResolver.Build(f.Material.shaderName, embedded, normal, specular);
                             }
                         }
 
@@ -181,6 +160,9 @@ namespace IVUnity.ECS
                                 Center  = mesh.bounds.center,
                                 Extents = mesh.bounds.extents,
                             },
+                            #if UNITY_EDITOR
+                            ShaderName = f.Material?.shaderName ?? "unknown",
+                            #endif
                         };
                     }
 
@@ -261,7 +243,7 @@ namespace IVUnity.ECS
         private static void ReleaseLeaf(IVUnity.Resolver.TxdSlot leaf)
         {
             if (leaf == null) return;
-            var store = MaterialTextureResolverV2.TxdStore;
+            var store = MaterialResolver.TxdStore;
             if (store != null) store.Release(leaf.ChainSlots());
         }
 

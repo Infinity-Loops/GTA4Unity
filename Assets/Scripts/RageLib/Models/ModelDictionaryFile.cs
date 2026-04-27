@@ -27,7 +27,7 @@ namespace RageLib.Models
 {
     public class ModelDictionaryFile : IModelFile
     {
-        internal File<DrawableModelDictionary> File { get; private set; }
+        public File<DrawableModelDictionary> File { get; private set; }
 
         public void Open(string filename)
         {
