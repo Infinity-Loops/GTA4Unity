@@ -29,16 +29,11 @@ namespace IVUnity.ECS
         [Tooltip("Path to the GTA IV install directory (same value Loader.cs uses on the legacy scene).")]
         public string gameDir;
 
-        [Header("Scene references")]
-        [SerializeField, Tooltip("Target transform for streaming focus. Falls back to Camera.main if unset.")]
-        private Transform focusTarget;
-
         [Header("Resolver")]
 
         public ModelCatalog Catalog     { get; private set; }
         public MeshCache    MeshCache   { get; private set; }
         public ModelLoader  ModelLoader { get; private set; }
-        public Transform    FocusTarget => focusTarget;
 
         private GTADatLoader gameLoader;
         private RealFileSystem fs;

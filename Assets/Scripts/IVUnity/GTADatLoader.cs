@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using System.IO;
 using RageLib.FileSystem.Common;
@@ -13,6 +14,7 @@ public class GTADatLoader
     internal string gameDir;
 
     public Dictionary<string, File> gameFiles = new();
+    public HashSet<string> baseGameWpls = new(StringComparer.OrdinalIgnoreCase);
 
     internal IMGLoader imgLoader;
     public IDELoader ideLoader;
@@ -51,7 +53,7 @@ public class GTADatLoader
 
             var imgPriority = new Dictionary<string, (int pri, int ord)>(StringComparer.OrdinalIgnoreCase);
             foreach (var e in imgList.Entries)
-                imgPriority[$"{gameDir}/{e.Path}"] = (e.Priority, e.Order);
+                imgPriority[Path.GetFullPath($"{gameDir}/{e.Path}")] = (e.Priority, e.Order);
 
             var allImgFiles = new List<string>();
             SearchFilesRecursively(gameDir, ".img", allImgFiles);
@@ -87,6 +89,8 @@ public class GTADatLoader
                 string imgPath = i < allImgFiles.Count ? allImgFiles[i] : "";
                 imgPriority.TryGetValue(imgPath, out var thisPri);
 
+                bool isBaseGameImg = imgPriority.ContainsKey(imgPath);
+
                 var files = imgLoader.imgs[i].GetAllFiles();
                 for (int j = 0; j < files.Count; j++)
                 {
@@ -100,6 +104,9 @@ public class GTADatLoader
 
                     gameFiles[key] = files[j];
                     filePriority[key] = thisPri;
+
+                    if (isBaseGameImg && key.EndsWith(".wpl"))
+                        baseGameWpls.Add(key);
                 }
 
                 LoadingScreen.AdvanceProgress(imgLoader.imgs[i].ToString());
@@ -170,18 +177,25 @@ public class GTADatLoader
 
             int baseCount = loadedNames.Count;
 
-            // Pass 2: all remaining WPLs from IMGs (streaming HD content)
-            foreach (var kvp in gameFiles)
+            // Pass 2: streaming WPLs from base game IMGs only (images.txt listed)
+            // Engine only mounts images.txt IMGs in base game mode.
+            // DLC/episode IMGs are never mounted — their WPLs must be excluded.
+            int skippedDlc = 0;
+            foreach (string wplKey in baseGameWpls)
             {
-                if (!kvp.Key.EndsWith(".wpl")) continue;
-                if (loadedNames.Contains(kvp.Key)) continue;
+                if (loadedNames.Contains(wplKey)) continue;
 
-                iplLoader.LoadIPL(kvp.Value.Name, kvp.Value.GetData());
-                loadedNames.Add(kvp.Key);
+                if (gameFiles.TryGetValue(wplKey, out File wpl))
+                {
+                    iplLoader.LoadIPL(wpl.Name, wpl.GetData());
+                    loadedNames.Add(wplKey);
+                }
             }
+            skippedDlc = gameFiles.Keys.Count(k => k.EndsWith(".wpl")) - loadedNames.Count;
 
             Debug.Log($"Loaded {loadedNames.Count} WPL files ({baseCount} base from gta.dat, " +
-                      $"{loadedNames.Count - baseCount} streaming from IMGs)");
+                      $"{loadedNames.Count - baseCount} streaming from base game IMGs, " +
+                      $"{skippedDlc} DLC WPLs skipped)");
         });
     }
 

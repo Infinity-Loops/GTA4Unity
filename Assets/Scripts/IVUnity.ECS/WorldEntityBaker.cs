@@ -32,6 +32,14 @@ namespace IVUnity.ECS
             ext.Equals(".wdd", StringComparison.OrdinalIgnoreCase) ||
             ext.Equals(".wft", StringComparison.OrdinalIgnoreCase);
 
+        private static bool ContainsSlod(string name) =>
+            !string.IsNullOrEmpty(name) &&
+            name.IndexOf("slod", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool ContainsLod(string name) =>
+            !string.IsNullOrEmpty(name) &&
+            name.IndexOf("lod", StringComparison.OrdinalIgnoreCase) >= 0;
+
         public static void Bake(
             EntityManager em,
             GTADatLoader loader,
@@ -338,12 +346,19 @@ namespace IVUnity.ECS
                         drawDist = objDef.drawDistance[0];
                     em.SetComponentData(entity, new DrawDist { Value = drawDist });
 
+                    // Bound radius from IDE boundsSphere.w (pre-computed bounding sphere radius)
+                    float boundRadius = objDef?.boundsSphere.w ?? 0f;
+                    em.AddComponentData(entity, new BoundRadius { Value = boundRadius });
+
                     em.SetComponentData(entity, new InstanceOrigin { SourceId = sourceId });
 
                     int2 cell = CellMath.PositionToCell(new float3(uPos.x, uPos.y, uPos.z), cellSize);
                     em.SetSharedComponent(entity, new CellIndex { Cell = cell });
                     em.SetSharedComponent(entity, new StreamingState { Value = StreamingStateValue.Dormant });
                     em.SetSharedComponent(entity, new StreamingIplId { Value = streamingIplIdx });
+
+                    if (streamingIplIdx < 0)
+                        em.AddComponentData(entity, new BaseLayerTag());
 
                     iplEntityMap[instIdx] = entity;
                     iplInstMap[instIdx] = inst;
@@ -372,8 +387,9 @@ namespace IVUnity.ECS
                     }
                 }
 
-                // Count children per LOD and add LodRef on HD entities.
+                // Count children per LOD, track max child drawDist, add LodRef on HD entities.
                 var childCounts = new Dictionary<int, int>();
+                var childMaxDist = new Dictionary<int, float>();
                 int brokenHd = 0, brokenLod = 0;
                 foreach (var kv in iplInstMap)
                 {
@@ -395,15 +411,24 @@ namespace IVUnity.ECS
                     if (!childCounts.ContainsKey(lodIdx))
                         childCounts[lodIdx] = 0;
                     childCounts[lodIdx]++;
+
+                    // Track max child drawDist for ChildLodDist (RAGE: m_childLodDistance)
+                    float childDraw = em.GetComponentData<DrawDist>(hdEntity).Value;
+                    if (!childMaxDist.TryGetValue(lodIdx, out float existing) || childDraw > existing)
+                        childMaxDist[lodIdx] = childDraw;
                 }
                 if (brokenHd > 0 || brokenLod > 0)
                     Debug.LogWarning($"[Baker] IPL '{ipl.name}': {brokenHd} broken HD links (HD deduped), {brokenLod} broken LOD links (LOD deduped)");
 
-                // Write child counts (engine +0x61)
+                // Write child counts (engine +0x61) and child lod distance (RAGE: m_childLodDistance)
                 foreach (var kv in childCounts)
                 {
                     if (iplEntityMap.TryGetValue(kv.Key, out var lodEntity))
+                    {
                         em.SetComponentData(lodEntity, new LodChildCount { Value = kv.Value });
+                        if (childMaxDist.TryGetValue(kv.Key, out float maxDist))
+                            em.AddComponentData(lodEntity, new ChildLodDist { Value = maxDist });
+                    }
                 }
 
                 // --- LOD draw distance propagation (engine: SetupLodHierarchy) ---
@@ -437,6 +462,31 @@ namespace IVUnity.ECS
                 }
                 if (propUpdated > 0)
                     Debug.Log($"[Baker] IPL '{ipl.name}': DrawDist propagation: {propUpdated} updates in {propPasses} passes");
+
+                // --- LOD type classification (RAGE: eLodType) ---
+                // GTA IV doesn't store lodLevel in map data like GTA V.
+                // Classification by model name convention:
+                //   "SLOD"/"slod" → SLOD
+                //   "LOD"/"lod" prefix/suffix → LOD
+                //   everything else → HD or OrphanHD
+                foreach (var kv in iplEntityMap)
+                {
+                    int instIdx = kv.Key;
+                    Entity entity = kv.Value;
+                    string modelName = iplInstMap.TryGetValue(instIdx, out var inst) ? inst.name : "";
+
+                    LodType type;
+                    if (ContainsSlod(modelName))
+                        type = LodType.SLOD;
+                    else if (ContainsLod(modelName))
+                        type = LodType.LOD;
+                    else if (em.HasComponent<LodRef>(entity))
+                        type = LodType.HD;
+                    else
+                        type = LodType.OrphanHD;
+
+                    em.AddComponentData(entity, new LodLevel { Value = type });
+                }
 
                 LoadingScreen.AdvanceProgress(ipl.name, created - batchStart);
             }

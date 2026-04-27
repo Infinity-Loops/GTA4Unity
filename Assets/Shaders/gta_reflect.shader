@@ -48,6 +48,7 @@ Shader "GTA IV/gta_reflect"
                 UNITY_SETUP_INSTANCE_ID(i);
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                clip(tex.a - 0.5);
                 half4 diffuse = half4(tex.rgb, tex.a);
                 half reflMask = SAMPLE_TEXTURE2D(_SpecTex, sampler_SpecTex, i.uv).r;
                 float3 N = normalize(i.normalWS);

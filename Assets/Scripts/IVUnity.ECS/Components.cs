@@ -9,6 +9,24 @@ namespace IVUnity.ECS
     {
         public FixedString64Bytes Value;
     }
+
+    public enum FadeReason : byte
+    {
+        None = 0,
+        AllChildrenLoaded = 1,
+        BaseLayerHidden = 2,
+        DistanceEdgeFade = 3,
+        FullyVisible = 4,
+    }
+
+    public struct DebugFadeReason : IComponentData
+    {
+        public FadeReason Value;
+        public float DistToCamera;
+        public float ChildLodDistScaled;
+        public int ChildrenLoaded;
+        public int ChildrenTotal;
+    }
     #endif
     // ---------- Tags ----------
 
@@ -17,6 +35,9 @@ namespace IVUnity.ECS
 
     /// <summary>Marks a sub-mesh child entity spawned during promotion.</summary>
     public struct SubMeshTag : IComponentData { }
+
+    /// <summary>Marks an entity from a gta.dat WPL (the always-loaded LOD base layer).</summary>
+    public struct BaseLayerTag : IComponentData { }
 
     // ---------- Per-root data ----------
 
@@ -83,7 +104,46 @@ namespace IVUnity.ECS
         public float Value;
     }
 
+    /// <summary>
+    /// XZ bounding radius of this entity. Used to adjust distance checks
+    /// for large objects so the camera distance is measured from the
+    /// nearest edge, not the center. Set from IDE boundsMin/boundsMax.
+    /// Engine: CBaseModelInfo bound radius via vftable+0x58.
+    /// </summary>
+    public struct BoundRadius : IComponentData
+    {
+        public float Value;
+    }
+
+    /// <summary>
+    /// Max draw distance of this entity's LOD children. Stored on the parent.
+    /// The parent fades when camera is within this distance (children cover it).
+    /// Set during baking from max(children drawDist). Equivalent to
+    /// fwLodData::m_childLodDistance in RAGE (fwEntityDef::m_childLodDist in map data).
+    /// </summary>
+    public struct ChildLodDist : IComponentData
+    {
+        public float Value;
+    }
+
     // ---------- LOD ----------
+
+    /// <summary>
+    /// LOD depth classification matching RAGE's eLodType (from OpenRage fwLodData).
+    /// Set during baking based on hierarchy position.
+    /// </summary>
+    public enum LodType : byte
+    {
+        HD        = 0,  // highest detail in chain (has parent, no children)
+        OrphanHD  = 1,  // standalone HD (no parent, no children)
+        LOD       = 2,  // mid-chain LOD (has parent AND children)
+        SLOD      = 3,  // root LOD (no parent, has children)
+    }
+
+    public struct LodLevel : IComponentData
+    {
+        public LodType Value;
+    }
 
     /// <summary>
     /// On an HD entity: points to the corresponding LOD entity that replaces it at distance.

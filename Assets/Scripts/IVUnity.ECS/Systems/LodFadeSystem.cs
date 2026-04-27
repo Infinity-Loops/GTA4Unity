@@ -6,22 +6,21 @@ using Unity.Transforms;
 namespace IVUnity.ECS
 {
     /// <summary>
-    /// Engine-faithful LOD crossfade via stipple dithering.
+    /// LOD alpha system mirroring RAGE architecture (from OpenRage GTA V source):
     ///
-    /// Key insight from binary trace (FUN_00ae6fa0, FUN_00ae7fd0, FUN_00ae25a0):
-    ///   - LOD entities with +0x61 > 0 ALWAYS render (in Pass 3)
-    ///   - They only become invisible when ALL children set coverage bits (+0x54)
-    ///   - The skip at line 1003586 requires: alpha<239 AND +0x4C!=0 AND +0x61!=0
-    ///   - Top-level LODs (no parent) are NEVER skipped
-    ///   - LODs with 2+ children stay visible during partial child loading
+    /// 1. CalcAlphaFade: per-entity alpha from own distance (fade at draw distance edge)
+    /// 2. FadeDownRelativeToChildren: parent fades when camera within childLodDist
+    ///    - Gated by all children being within their draw distance (RAGE: AllChildrenAttached)
+    ///    - Uses ChildLodDist (max of children's drawDist, set during baking)
+    /// 3. Force parent visible if child not loaded (Part C safety)
     ///
-    /// Our approximation: fade LOD only when ALL its children (LodChildCount) are Loaded.
+    /// RAGE refs: CLodMgr::UpdateAlphaPt2_FadeDownRelativeToChildren,
+    ///            CLodMgr::CalcCrossFadeAlpha, PostScan.cpp alpha update pass #2
     /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderFirst = true)]
     public partial class LodFadeSystem : SystemBase
     {
-        private const float FadeZone = 30f;
-        private const float LodHideFactor = 0.1f;
+        private const float FadeZone = 20f;
 
         protected override void OnCreate()
         {
@@ -35,24 +34,40 @@ namespace IVUnity.ECS
             var cfg = SystemAPI.GetSingleton<StreamingConfig>();
             float lodScale = cfg.LodDistanceScale;
             var em = EntityManager;
+            float camX = focus.Position.x;
+            float camZ = focus.Position.z;
 
-            // Step 1: count how many Loaded children each LOD entity has.
-            var loadedChildCount = new NativeHashMap<Entity, int>(256, Allocator.Temp);
+            // Step 1: count children within their draw distance per LOD parent.
+            // RAGE: AllChildrenAttached — in engine children beyond range aren't streamed in.
+            // We load everything, so gate on draw distance instead.
+            var renderingChildCount = new NativeHashMap<Entity, int>(256, Allocator.Temp);
 
             var loadedHdQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, LodRef, StreamingState>()
+                .WithAll<WorldInstanceTag, LodRef, LocalTransform, DrawDist, StreamingState>()
                 .Build(em);
             loadedHdQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
 
             if (!loadedHdQuery.IsEmpty)
             {
-                using var lodRefs = loadedHdQuery.ToComponentDataArray<LodRef>(Allocator.Temp);
+                using var lodRefs    = loadedHdQuery.ToComponentDataArray<LodRef>(Allocator.Temp);
+                using var childTrans = loadedHdQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                using var childDists = loadedHdQuery.ToComponentDataArray<DrawDist>(Allocator.Temp);
+
                 for (int i = 0; i < lodRefs.Length; i++)
                 {
                     Entity lod = lodRefs[i].LodEntity;
                     if (lod == Entity.Null) continue;
-                    loadedChildCount.TryGetValue(lod, out int count);
-                    loadedChildCount[lod] = count + 1;
+
+                    float cdx = childTrans[i].Position.x - camX;
+                    float cdz = childTrans[i].Position.z - camZ;
+                    float childDistSq = cdx * cdx + cdz * cdz;
+                    float childRange = childDists[i].Value * lodScale;
+
+                    if (childDistSq < childRange * childRange)
+                    {
+                        renderingChildCount.TryGetValue(lod, out int count);
+                        renderingChildCount[lod] = count + 1;
+                    }
                 }
             }
 
@@ -63,7 +78,7 @@ namespace IVUnity.ECS
             loadedQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
             if (loadedQuery.IsEmpty)
             {
-                loadedChildCount.Dispose();
+                renderingChildCount.Dispose();
                 return;
             }
 
@@ -76,7 +91,7 @@ namespace IVUnity.ECS
                 .Build(em);
             if (childQuery.IsEmpty)
             {
-                loadedChildCount.Dispose();
+                renderingChildCount.Dispose();
                 return;
             }
 
@@ -88,42 +103,100 @@ namespace IVUnity.ECS
             for (int i = 0; i < entities.Length; i++)
             {
                 Entity e = entities[i];
-                float dx = transforms[i].Position.x - focus.Position.x;
-                float dz = transforms[i].Position.z - focus.Position.z;
+                float dx = transforms[i].Position.x - camX;
+                float dz = transforms[i].Position.z - camZ;
                 float dist = math.sqrt(dx * dx + dz * dz);
-                float effectiveDraw = drawDists[i].Value * lodScale;
-                float blend = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
 
-                float alpha;
+                // Engine: adds bound radius to effective draw, not subtracts from distance.
+                // Large objects stay visible longer because their extent reaches further.
+                float radius = em.HasComponent<BoundRadius>(e) ? em.GetComponentData<BoundRadius>(e).Value : 0f;
+                float effectiveDraw = drawDists[i].Value * lodScale + radius;
 
+                // Part 1: base alpha from own distance (RAGE: CalcAlphaFade)
+                float fadeUp = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
+                float alpha = math.saturate(fadeUp * 4.0f);
+                if (alpha > 0.9f) alpha = 1.0f;
+
+                #if UNITY_EDITOR
+                FadeReason reason = alpha < 1.0f ? FadeReason.DistanceEdgeFade : FadeReason.FullyVisible;
+                #endif
+
+                // Part 2: FadeDownRelativeToChildren (RAGE: UpdateAlphaPt2)
+                // RAGE: only entities with children apply this (!IsHighDetail)
+                // HD and OrphanHD are leaves — they never fade from children.
+                bool hasChildLodDist = em.HasComponent<ChildLodDist>(e);
                 bool hasChildCount = em.HasComponent<LodChildCount>(e);
-                int totalChildren = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
-                loadedChildCount.TryGetValue(e, out int loadedChildren);
+                bool hasLodLevel = em.HasComponent<LodLevel>(e);
+                bool isParentType = hasLodLevel &&
+                    (em.GetComponentData<LodLevel>(e).Value == LodType.LOD ||
+                     em.GetComponentData<LodLevel>(e).Value == LodType.SLOD);
 
-                bool isBaseLayer = em.GetSharedComponent<StreamingIplId>(e).Value < 0;
+                if (isParentType)
+                {
+                    int totalChildren = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
+                    renderingChildCount.TryGetValue(e, out int attached);
 
-                if (totalChildren > 0 && loadedChildren >= totalChildren)
-                {
-                    // ALL children loaded → hide LOD parent (within-IPL chain).
-                    alpha = 0.0f;
+                    float childLodDist;
+
+                    if (totalChildren > 0 && attached >= totalChildren && hasChildLodDist)
+                    {
+                        // Within-IPL: all children rendering → fade using known childLodDist
+                        childLodDist = em.GetComponentData<ChildLodDist>(e).Value * lodScale;
+                    }
+                    else if (totalChildren == 0 && em.HasComponent<BaseLayerTag>(e))
+                    {
+                        // Childless LOD in base layer: HD is in streaming WPLs (no LodRef link).
+                        // Fade using assumed HD coverage — conservative to avoid gaps.
+                        childLodDist = 50f * lodScale;
+                    }
+                    else
+                    {
+                        childLodDist = -1f; // don't fade
+                    }
+
+                    if (childLodDist >= 0f)
+                    {
+                        float fadeStart = childLodDist + FadeZone;
+                        float fadeStop = childLodDist;
+
+                        if (dist <= fadeStart)
+                        {
+                            float t = math.saturate((dist - fadeStop) / (fadeStart - fadeStop));
+                            alpha = math.min(alpha, t);
+                            if (alpha < 0.02f) alpha = 0.0f;
+
+                            #if UNITY_EDITOR
+                            reason = totalChildren > 0 ? FadeReason.AllChildrenLoaded : FadeReason.BaseLayerHidden;
+                            #endif
+                        }
+                    }
                 }
-                else if (isBaseLayer && dist < effectiveDraw * LodHideFactor)
+
+                // Part 3: Force parent visible if child not loaded (RAGE: PostScan Part C)
+                // If this entity has a parent AND this entity is fading/invisible AND not loaded
+                // → force parent alpha = 1. We handle this by not hiding entities that aren't loaded,
+                // which the Loaded query filter already ensures.
+
+                #if UNITY_EDITOR
+                if (isParentType)
                 {
-                    // gta.dat entity close to focus → streaming HD covers this area.
-                    // Hide radius scales with entity's own draw distance so coverage matches.
-                    alpha = 0.0f;
+                    int dbgTotal = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
+                    renderingChildCount.TryGetValue(e, out int dbgAttached);
+                    float dbgChildDist = hasChildLodDist ? em.GetComponentData<ChildLodDist>(e).Value * lodScale : 0;
+                    var dbg = new DebugFadeReason
+                    {
+                        Value = reason,
+                        DistToCamera = dist,
+                        ChildLodDistScaled = dbgChildDist,
+                        ChildrenLoaded = dbgAttached,
+                        ChildrenTotal = dbgTotal,
+                    };
+                    if (em.HasComponent<DebugFadeReason>(e))
+                        em.SetComponentData(e, dbg);
+                    else
+                        em.AddComponentData(e, dbg);
                 }
-                else if (totalChildren > 0)
-                {
-                    // Has children but not all loaded → fully visible
-                    alpha = 1.0f;
-                }
-                else
-                {
-                    // Leaf/HD/standalone entity: fade at draw distance edge
-                    alpha = math.saturate(blend * 4.0f);
-                    if (alpha > 0.9f) alpha = 1.0f;
-                }
+                #endif
 
                 alphaMap[e] = alpha;
             }
@@ -139,7 +212,7 @@ namespace IVUnity.ECS
             }
 
             alphaMap.Dispose();
-            loadedChildCount.Dispose();
+            renderingChildCount.Dispose();
         }
     }
 }

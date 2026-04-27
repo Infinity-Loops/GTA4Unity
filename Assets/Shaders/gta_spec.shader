@@ -19,7 +19,10 @@ Shader "GTA IV/gta_spec"
         Pass
         {
             Name "GTA Forward"
-            Tags { "LightMode" = "UniversalForward" }
+            Tags
+            {
+                "LightMode" = "UniversalForward"
+            }
             Cull Back
             ZWrite On
             ZTest LEqual
@@ -36,11 +39,13 @@ Shader "GTA IV/gta_spec"
             #include "Include/GTA_Common.hlsl"
             #include "Include/GTA_Stipple.hlsl"
 
-            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
-            TEXTURE2D(_SpecTex); SAMPLER(sampler_SpecTex);
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
+            TEXTURE2D(_SpecTex);
+            SAMPLER(sampler_SpecTex);
             CBUFFER_START(UnityPerMaterial)
-            float _StippleAlpha;
-            float _Shininess;
+                float _StippleAlpha;
+                float _Shininess;
             CBUFFER_END
 
             #ifdef UNITY_DOTS_INSTANCING_ENABLED
@@ -60,6 +65,7 @@ Shader "GTA IV/gta_spec"
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
 
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                clip(tex.a - 0.1);
                 half4 diffuse = half4(tex.rgb, tex.a);
                 half4 specMap = SAMPLE_TEXTURE2D(_SpecTex, sampler_SpecTex, i.uv);
                 float3 N = normalize(i.normalWS);
@@ -67,7 +73,8 @@ Shader "GTA IV/gta_spec"
                 float4 shadowCoord = TransformWorldToShadowCoord(i.positionWS);
                 Light mainLight = GetMainLight(shadowCoord);
 
-                half3 specColor = GTA_Specular(N, i.positionWS, mainLight.direction, mainLight.color, specMap.r, _Shininess, mainLight.shadowAttenuation);
+                half3 specColor = GTA_Specular(N, i.positionWS, mainLight.direction, mainLight.color, specMap.r,
+                                                                _Shininess, mainLight.shadowAttenuation);
 
                 half3 color = GTA_LightingWithShadow(diffuse.rgb, N, i.positionWS);
                 color += specColor;
@@ -81,7 +88,10 @@ Shader "GTA IV/gta_spec"
         Pass
         {
             Name "ShadowCaster"
-            Tags { "LightMode" = "ShadowCaster" }
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
             ZWrite On
             ZTest LEqual
             ColorMask 0
@@ -96,8 +106,8 @@ Shader "GTA IV/gta_spec"
             #include "Include/GTA_Stipple.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
-            float _StippleAlpha;
-            float _Shininess;
+                float _StippleAlpha;
+                float _Shininess;
             CBUFFER_END
 
             #ifdef UNITY_DOTS_INSTANCING_ENABLED
@@ -109,7 +119,12 @@ Shader "GTA IV/gta_spec"
 
             float3 _LightDirection;
             GTA_Varyings_Shadow vert(GTA_Attributes v) { return GTA_VertexShadow(v, _LightDirection); }
-            half4 frag(GTA_Varyings_Shadow i) : SV_Target { GTA_StippleClip(i.positionCS.xy, _StippleAlpha); return 0; }
+
+            half4 frag(GTA_Varyings_Shadow i) : SV_Target
+            {
+                GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
+                return 0;
+            }
             ENDHLSL
         }
     }

@@ -52,9 +52,9 @@ Shader "GTA IV/gta_emissive"
                 UNITY_SETUP_INSTANCE_ID(i);
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
-                half4 diffuse = half4(tex.rgb, tex.a);
-                half3 color = GTA_ApplyFog(diffuse.rgb, i.fogFactor);
-                return half4(color, diffuse.a);
+                clip(tex.a - 0.5);
+                half3 color = GTA_ApplyFog(tex.rgb, i.fogFactor);
+                return half4(color, 1);
             }
             ENDHLSL
         }
