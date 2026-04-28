@@ -33,6 +33,53 @@ GraphicsSettings:
   - {fileID: 15106, guid: 0000000000000000f000000000000000, type: 0}
   - {fileID: 10753, guid: 0000000000000000f000000000000000, type: 0}
   - {fileID: 10770, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 4800000, guid: f6a6beaad09694340bcb7be1e9c71504, type: 3}
+  - {fileID: 4800000, guid: 8c81f504833ce9b41af9c6e211202d22, type: 3}
+  - {fileID: 4800000, guid: 257b63d933f89434e8d75f4248bc01f9, type: 3}
+  - {fileID: 4800000, guid: 9a8c2992eee3b3e4ebaf612cae11dd05, type: 3}
+  - {fileID: 4800000, guid: 2f638dcfa4064494cadef377507c6c7c, type: 3}
+  - {fileID: 4800000, guid: ed70869ba65aff94cbe232e2b98f9888, type: 3}
+  - {fileID: 4800000, guid: 73b55501dd02e4e4baae5ad9a53f86b4, type: 3}
+  - {fileID: 4800000, guid: 44be5c9b92772a546aeb629ec028d4bf, type: 3}
+  - {fileID: 4800000, guid: c99ede012df66e64a9a2711841f4036b, type: 3}
+  - {fileID: 4800000, guid: 9ada9eb82b0333946a26e7f2b27af3fb, type: 3}
+  - {fileID: 4800000, guid: 7c8772de142e475478e09549f21f4fb6, type: 3}
+  - {fileID: 4800000, guid: b3b9365307b5eae4eb86a84bff33c7e2, type: 3}
+  - {fileID: 4800000, guid: 256050ef2d278f64b844c7645926cd89, type: 3}
+  - {fileID: 4800000, guid: afd953bb38e4be24991d9c241cc731e5, type: 3}
+  - {fileID: 4800000, guid: 5cebfa2a4be14c4419bd634d3e92de03, type: 3}
+  - {fileID: 4800000, guid: b433ac0bb266ca349bffbdb6ff9a85e8, type: 3}
+  - {fileID: 4800000, guid: ada4d2f814b0b174c9c0fee5fed5fd62, type: 3}
+  - {fileID: 4800000, guid: 6091b09b033504f488246ff7233b6d94, type: 3}
+  - {fileID: 4800000, guid: b46fedbc38efa8f4597377659a5afe95, type: 3}
+  - {fileID: 4800000, guid: 823bd2e0b4382c846b779d1044a445a8, type: 3}
+  - {fileID: 4800000, guid: 8df4c872dde895b4c9342678e39c2bf5, type: 3}
+  - {fileID: 4800000, guid: 1b69c83813bb5c54eb393c2ff4503f06, type: 3}
+  - {fileID: 4800000, guid: b06af5cb44a8bab449e97eff2fb3c8e2, type: 3}
+  - {fileID: 4800000, guid: 54d2f14a99661cc4489afb9543c8464f, type: 3}
+  - {fileID: 4800000, guid: bd42a2acb28eb8745baa25861c5e8911, type: 3}
+  - {fileID: 4800000, guid: d927220f03850884ab4fb0d3a55a5af9, type: 3}
+  - {fileID: 4800000, guid: 7c742b76e446fb84c8b1c607a076d988, type: 3}
+  - {fileID: 4800000, guid: 71e08ff4a55d2564a9987079c6e1659d, type: 3}
+  - {fileID: 4800000, guid: 6d311eed79c23424a92e98be0042a240, type: 3}
+  - {fileID: 4800000, guid: ade2401d0d94f8a47afd18c86af35ff6, type: 3}
+  - {fileID: 4800000, guid: fe61fea1289804a4a8304282856ddec4, type: 3}
+  - {fileID: 4800000, guid: 87f42cae5a7f238428f587e70e08d5d2, type: 3}
+  - {fileID: 4800000, guid: cd8a26a5bc06c2946af33fd466777235, type: 3}
+  - {fileID: 4800000, guid: d84b762189f464d4f917a53b2df378e5, type: 3}
+  - {fileID: 4800000, guid: 4e4a37550c83717458194c3e5305d7cb, type: 3}
+  - {fileID: 4800000, guid: 8f6957f08105d4c41964f464e94b92c0, type: 3}
+  - {fileID: 4800000, guid: 88c51aa8200d01649b9adf8ea46c7d75, type: 3}
+  - {fileID: 4800000, guid: bd0fbaab01e2aa14a8477b6c0503ef3b, type: 3}
+  - {fileID: 4800000, guid: d919093f3f0960a44b1c14c9b02ce380, type: 3}
+  - {fileID: 4800000, guid: a47aaab75a4044342a19651ad1f9b4aa, type: 3}
+  - {fileID: 4800000, guid: 12c74deae0a8ff441b14dc5c15484ca7, type: 3}
+  - {fileID: 4800000, guid: fe5c3b96865209146b00554ef7933bd1, type: 3}
+  - {fileID: 4800000, guid: 4ccf42ab932915a41b0118fae470d5f6, type: 3}
+  - {fileID: 4800000, guid: 9eb83519af6660f4b86cd0bc42aea359, type: 3}
+  - {fileID: 4800000, guid: c0c9608f6b49d5f489986b2b1386bdb2, type: 3}
+  - {fileID: 4800000, guid: 7858ee4d86f5ffa49b675d2c4162b7c0, type: 3}
+  - {fileID: 4800000, guid: 40fab851fcc7fb3448b961301c815bef, type: 3}
   m_PreloadedShaders: []
   m_PreloadShadersBatchTimeLimit: -1
   m_SpritesDefaultMaterial: {fileID: 10754, guid: 0000000000000000f000000000000000, type: 0}
@@ -58,6 +105,8 @@ GraphicsSettings:
   m_AlbedoSwatchInfos: []
   m_RenderPipelineGlobalSettingsMap:
     UnityEngine.Rendering.Universal.UniversalRenderPipeline: {fileID: 11400000, guid: 7453b2dd5aa00b3408fd8303552f54fd, type: 2}
+  m_ShaderBuildSettings:
+    keywordDeclarationOverrides: []
   m_LightsUseLinearIntensity: 1
   m_LightsUseColorTemperature: 1
   m_LogWhenShaderIsCompiled: 0

@@ -1,0 +1,6 @@
+{
+	"name": "IVUnity.Editor",
+	"includePlatforms": ["Editor"],
+	"references": [],
+	"autoReferenced": true
+}
