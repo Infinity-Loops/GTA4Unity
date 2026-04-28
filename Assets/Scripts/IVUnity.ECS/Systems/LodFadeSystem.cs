@@ -78,9 +78,7 @@ namespace IVUnity.ECS
                 return;
             }
 
-            // Small capacity: only fading entities enter the map (near draw distance edges)
-            var fadingMap = new NativeParallelHashMap<Entity, float>(
-                math.max(rootCount / 8, 64), Allocator.TempJob);
+            var fadingMap = new NativeParallelHashMap<Entity, float>(rootCount, Allocator.TempJob);
 
             dep = new ComputeAlphaJob
             {

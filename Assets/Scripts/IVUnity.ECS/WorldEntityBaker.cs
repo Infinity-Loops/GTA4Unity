@@ -299,6 +299,94 @@ namespace IVUnity.ECS
                         continue;
                     }
 
+                    // MLO interiors: if this INST is an MLO building, create interior
+                    // prop entities instead of an entity for the building shell itself.
+                    // MLO models aren't standard drawables — they're containers for rooms/props.
+                    if (loader.ideLoader.mloDict.TryGetValue(instanceName, out var mloDef))
+                    {
+                        int mloCreated = 0, mloSkipped = 0;
+
+                        // Position: compose in RAGE space with raw quaternion (works for vector rotation),
+                        // then let Ipl_INST.unityPosition handle RAGE→Unity via VirtualParentMatrix.
+                        Quaternion bRotRaw = new Quaternion(
+                            inst.rotation.x, inst.rotation.y, inst.rotation.z, inst.rotation.w);
+
+                        // Rotation: building's unityRotation = ParentRot * mirrorAdjust(buildingStored).
+                        // The prop's relative rotation in Unity = mirrorAdjust(propStored) = (x, -y, -z, -w).
+                        // Composed: buildingUnityRot * mirrorAdjust(propStored).
+                        Quaternion bUnityRot = inst.unityRotation;
+
+                        foreach (var prop in mloDef.Entities)
+                        {
+                            string propName = prop.ModelName;
+                            uint propHash = ModelCatalog.Hash(propName);
+                            if (!catalog.TryGet(propHash, out _)) { mloSkipped++; continue; }
+
+                            // Position via fakeInst (RAGE composition → Ipl_INST conversion)
+                            Vector3 worldPos = inst.position + bRotRaw * prop.Position;
+                            var propInst = new Ipl_INST { position = worldPos };
+                            Vector3 propUPos = propInst.unityPosition;
+
+                            // Rotation: mirrorAdjust the prop's stored rotation (same as Ipl_INST line 58)
+                            // then compose with building's already-converted Unity rotation.
+                            Quaternion propRelMirror = new Quaternion(
+                                prop.Rotation.x, -prop.Rotation.y, -prop.Rotation.z, -prop.Rotation.w);
+                            Quaternion propURot = bUnityRot * propRelMirror;
+
+                            // Scale from the position conversion (handles VPM mirror)
+                            Vector3 propUScale = propInst.unityScale;
+                            bool mloUniform = Mathf.Abs(propUScale.x - propUScale.y) < 1e-3f
+                                           && Mathf.Abs(propUScale.x - propUScale.z) < 1e-3f;
+
+                            Entity propEntity;
+                            if (mloUniform)
+                            {
+                                float s = propUScale.x != 0f ? propUScale.x : 1f;
+                                propEntity = em.CreateEntity(archetypeUniform);
+                                em.SetComponentData(propEntity, LocalTransform.FromPositionRotationScale(
+                                    new float3(propUPos.x, propUPos.y, propUPos.z),
+                                    new quaternion(propURot.x, propURot.y, propURot.z, propURot.w),
+                                    s));
+                            }
+                            else
+                            {
+                                propEntity = em.CreateEntity(archetypeNonUniform);
+                                em.SetComponentData(propEntity, LocalTransform.FromPositionRotationScale(
+                                    new float3(propUPos.x, propUPos.y, propUPos.z),
+                                    new quaternion(propURot.x, propURot.y, propURot.z, propURot.w),
+                                    1f));
+                                em.SetComponentData(propEntity, new PostTransformMatrix
+                                {
+                                    Value = float4x4.Scale(propUScale.x, propUScale.y, propUScale.z),
+                                });
+                            }
+                            em.SetComponentData(propEntity, new ModelRef { ModelHash = propHash });
+                            em.SetComponentData(propEntity, new DrawDist { Value = mloDef.drawDistance });
+                            em.AddComponentData(propEntity, new BoundRadius { Value = 0f });
+                            em.SetComponentData(propEntity, new InstanceOrigin { SourceId = ++sourceId });
+
+                            int2 propCell = CellMath.PositionToCell(new float3(propUPos.x, propUPos.y, propUPos.z), cellSize);
+                            em.SetSharedComponent(propEntity, new CellIndex { Cell = propCell });
+                            em.SetSharedComponent(propEntity, new StreamingState { Value = StreamingStateValue.Dormant });
+                            em.SetSharedComponent(propEntity, new StreamingIplId { Value = streamingIplIdx });
+                            em.AddComponentData(propEntity, new LodLevel { Value = LodType.OrphanHD });
+
+                            #if UNITY_EDITOR
+                            em.AddComponentData(propEntity, new DebugModelName
+                            {
+                                Value = new Unity.Collections.FixedString64Bytes(propName.Length > 63 ? propName.Substring(0, 63) : propName)
+                            });
+                            #endif
+
+                            mloCreated++;
+                            created++;
+                        }
+
+                        if (mloCreated > 0 || mloSkipped > 0)
+                            Debug.Log($"[Baker] MLO '{instanceName}': {mloCreated} props, {mloSkipped} skipped (no catalog)");
+                        continue;
+                    }
+
                     // Only create an entity if we have a catalog entry for the model.
                     uint hash = ModelCatalog.Hash(instanceName);
                     if (!catalog.TryGet(hash, out _))
@@ -542,6 +630,8 @@ namespace IVUnity.ECS
 
             Debug.Log($"[Baker] StreamingIPLs: {StreamingIplRegistry.StreamingWplCount} streaming, " +
                       $"{StreamingIplRegistry.BaseWplNames.Count} base (gta.dat)");
+
+            Debug.Log($"[Baker] MLO: {loader.ideLoader.mloDict.Count} definitions loaded");
         }
     }
 }

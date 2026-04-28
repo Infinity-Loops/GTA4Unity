@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using RageLib.Textures;
 using RageLib.Textures.Decoder;
 using RageLib.Textures.Resource;
-using Unity.Burst;
 using Unity.Collections;
-using Unity.Jobs;
 using UnityEngine;
 
 public class Model3DGroup : GeometryModel3D
@@ -109,12 +107,13 @@ public class RageUnityTexture
 
         if (textureFile != null)
         {
-            byte[] pixels = textureFile.GetTextureData(level);
+            var native = textureFile.GetTextureDataNative(level, Allocator.TempJob);
+
             if (rageTextureType == TextureType.DXT3)
-            {
-                pixels = TextureDecoder.ConvertDXT3ToDXT5(pixels);
-            }
-            texture.LoadRawTextureData(pixels);
+                TextureDecoder.ConvertDXT3ToDXT5(native);
+
+            texture.LoadRawTextureData(native);
+            native.Dispose();
         }
 
         texture.Apply(false, true);

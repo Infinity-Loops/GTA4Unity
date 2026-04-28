@@ -6,6 +6,7 @@ public class IDELoader
     public List<IDE> ides = new List<IDE>();
     public Dictionary<string, Item_OBJS> objsDict = new Dictionary<string, Item_OBJS>();
     public Dictionary<string, Item_TOBJ> tobjDict = new Dictionary<string, Item_TOBJ>();
+    public Dictionary<string, Item_MLO> mloDict = new Dictionary<string, Item_MLO>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Parent-TXD chain from every IDE file's <c>txdp</c> section, keyed by the lowercase child
@@ -42,6 +43,14 @@ public class IDELoader
             if (!string.IsNullOrEmpty(tobj.modelName) && !tobjDict.ContainsKey(tobj.modelName))
             {
                 tobjDict[tobj.modelName] = tobj;
+            }
+        }
+
+        foreach (var mlo in ide.items_mlo)
+        {
+            if (!string.IsNullOrEmpty(mlo.modelName) && !mloDict.ContainsKey(mlo.modelName))
+            {
+                mloDict[mlo.modelName] = mlo;
             }
         }
 

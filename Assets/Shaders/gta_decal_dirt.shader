@@ -58,10 +58,10 @@ Shader "GTA IV/gta_decal_dirt"
                 UNITY_SETUP_INSTANCE_ID(i);
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
-                half4 diffuse = half4(tex.rgb * i.color.rgb, tex.a * i.color.a);
-                half3 lit = GTA_LightingWithShadow(diffuse.rgb, normalize(i.normalWS), i.positionWS);
+                half alpha = tex.r * i.color.a;
+                half3 lit = GTA_LightingWithShadow(i.color.rgb, normalize(i.normalWS), i.positionWS);
                 lit = GTA_ApplyFog(lit, i.fogFactor);
-                return half4(lit, diffuse.a);
+                return half4(lit, alpha);
             }
             ENDHLSL
         }

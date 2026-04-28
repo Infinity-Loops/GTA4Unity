@@ -42,18 +42,19 @@ namespace RageLib.Textures.Decoder
             return texture2D;
         }
 
+        public static void ConvertDXT3ToDXT5(NativeArray<byte> native)
+        {
+            new DXT3ToDXT5Job { Data = native }
+                .Schedule(native.Length / 16, 64)
+                .Complete();
+        }
+
         public static byte[] ConvertDXT3ToDXT5(byte[] data)
         {
             var native = new NativeArray<byte>(data, Allocator.TempJob);
-
-            new DXT3ToDXT5Job
-            {
-                Data = native,
-            }.Schedule(data.Length / 16, 64).Complete();
-
+            ConvertDXT3ToDXT5(native);
             native.CopyTo(data);
             native.Dispose();
-
             return data;
         }
 

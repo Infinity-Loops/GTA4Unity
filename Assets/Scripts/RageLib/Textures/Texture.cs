@@ -19,6 +19,8 @@
 \**********************************************************************/
 
 using System;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using RageLib.Textures.Decoder;
 using RageLib.Textures.Encoder;
@@ -199,6 +201,21 @@ namespace RageLib.Textures
                 Array.Copy(TextureData, offset, data, 0, size);
             }
             return data;
+        }
+
+        public unsafe NativeArray<byte> GetTextureDataNative(int level, Allocator allocator)
+        {
+            uint offset = 0;
+            for (int i = 0; i < level; i++)
+                offset += GetTextureDataSize(i);
+            int size = (int)GetTextureDataSize(level);
+
+            var native = new NativeArray<byte>(size, allocator, NativeArrayOptions.UninitializedMemory);
+            fixed (byte* src = &TextureData[offset])
+            {
+                UnsafeUtility.MemCpy(native.GetUnsafePtr(), src, size);
+            }
+            return native;
         }
 
         public void SetTextureData(int level, byte[] data)
