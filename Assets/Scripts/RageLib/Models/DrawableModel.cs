@@ -15,34 +15,22 @@ public class Model3DGroup : GeometryModel3D
 
 public class MeshGeometry3D
 {
-    public List<Vector3> positions = new List<Vector3>();
-    public List<Vector3> normals = new List<Vector3>();
-    public List<Vector2> textureCoordinates = new List<Vector2>();
-    // Per-vertex diffuse color from the WDR. Empty for meshes without a Color element in
-    // their VertexDeclaration. Read by terrain shaders as layer-blend weights.
-    public List<Color32> colors = new List<Color32>();
-    public List<int> triangleIndices = new List<int>();
+    public Vector3[] positions;
+    public Vector3[] normals;
+    public Vector2[] textureCoordinates;
+    public Color32[] colors;
+    public int[] triangleIndices;
 
     public Mesh GetUnityMesh()
     {
         var mesh = new Mesh();
-
-        NativeArray<Vector3> nativePositions = new NativeArray<Vector3>(positions.ToArray(), Allocator.TempJob);
-        NativeArray<Vector3> nativeNormals = new NativeArray<Vector3>(normals.ToArray(), Allocator.TempJob);
-        NativeArray<Vector2> nativeUVs = new NativeArray<Vector2>(textureCoordinates.ToArray(), Allocator.TempJob);
-
-        mesh.SetVertices(nativePositions);
-        mesh.SetNormals(nativeNormals);
-        mesh.SetUVs(0, nativeUVs);
-        if (colors.Count == positions.Count) mesh.SetColors(colors);
-        mesh.triangles = triangleIndices.ToArray();
+        if (positions != null) mesh.SetVertices(positions);
+        if (normals != null && normals.Length == positions.Length) mesh.SetNormals(normals);
+        if (textureCoordinates != null && textureCoordinates.Length == positions.Length) mesh.SetUVs(0, textureCoordinates);
+        if (colors != null && colors.Length == positions.Length) mesh.SetColors(colors);
+        if (triangleIndices != null) mesh.SetIndices(triangleIndices, MeshTopology.Triangles, 0);
         mesh.RecalculateBounds();
         mesh.UploadMeshData(true);
-
-        nativePositions.Dispose();
-        nativeNormals.Dispose();
-        nativeUVs.Dispose();
-
         return mesh;
     }
 }

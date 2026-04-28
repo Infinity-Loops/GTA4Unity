@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using RageLib.Models.Data;
 using RageLib.Models.Resource;
 using RageLib.Models.Resource.Shaders;
@@ -9,7 +8,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace RageLib.Models
 {
@@ -19,10 +17,7 @@ namespace RageLib.Models
 
         private static Textures.Texture FindTexture(TextureFile textures, string name)
         {
-            if (textures == null)
-            {
-                return null;
-            }
+            if (textures == null) return null;
             return textures.FindTextureByName(name);
         }
 
@@ -30,24 +25,18 @@ namespace RageLib.Models
         {
             lock (textureCache)
             {
-                if (string.IsNullOrEmpty(textureName))
-                {
-                    return null;
-                }
+                if (string.IsNullOrEmpty(textureName)) return null;
 
-                if (textureCache.ContainsKey(textureName))
-                    return textureCache[textureName];
+                if (textureCache.TryGetValue(textureName, out var cached))
+                    return cached;
 
                 var textureObj = FindTexture(attachedTexture, textureName);
                 if (textureObj == null && externalTextures != null)
                 {
-                    foreach (var file in externalTextures)
+                    for (int i = 0; i < externalTextures.Length; i++)
                     {
-                        textureObj = FindTexture(file, textureName);
-                        if (textureObj != null)
-                        {
-                            break;
-                        }
+                        textureObj = FindTexture(externalTextures[i], textureName);
+                        if (textureObj != null) break;
                     }
                 }
 
@@ -73,7 +62,6 @@ namespace RageLib.Models
             fragTypeGroup.Children.Add(parentDrawableNode.Model3D);
             fragTypeNode.Children.Add(parentDrawableNode);
 
-            // Process fragment children with proper naming and transform data
             for (int i = 0; i < fragTypeModel.Children.Length; i++)
             {
                 var fragTypeChild = fragTypeModel.Children[i];
@@ -82,11 +70,9 @@ namespace RageLib.Models
                     var childDrawableNode = GenerateModel(fragTypeChild.Drawable, textures);
                     childDrawableNode.NoCount = false;
                     childDrawableNode.Name = $"FragmentChild_{i}";
-                    
-                    // Store the fragment child reference for transform application
                     childDrawableNode.FragmentChild = fragTypeChild;
                     childDrawableNode.FragmentChildIndex = i;
-                    
+
                     fragTypeGroup.Children.Add(childDrawableNode.Model3D);
                     fragTypeNode.Children.Add(childDrawableNode);
                 }
@@ -116,8 +102,155 @@ namespace RageLib.Models
 
         public static ModelNode GenerateModel(Drawable drawable, TextureFile[] textures)
         {
+            var materials = ResolveMaterials(drawable, textures);
+
+            // Collect all meshes for batched job scheduling
+            var meshWorkItems = new List<MeshWorkItem>();
+            CollectMeshes(drawable, materials, meshWorkItems);
+
+            // Schedule all decode jobs, then Complete once
+            var jobHandles = new NativeArray<JobHandle>(meshWorkItems.Count, Allocator.Temp);
+            for (int m = 0; m < meshWorkItems.Count; m++)
+            {
+                var work = meshWorkItems[m];
+                var vertexHandle = work.DecodeJob.Schedule();
+                jobHandles[m] = work.IndexJob.Schedule(vertexHandle);
+            }
+            JobHandle.CompleteAll(jobHandles);
+            jobHandles.Dispose();
+
+            // Copy results to MeshGeometry3D arrays and dispose NativeArrays
+            for (int m = 0; m < meshWorkItems.Count; m++)
+            {
+                var work = meshWorkItems[m];
+                var mesh3D = work.Mesh3D;
+
+                mesh3D.positions = work.DecodeJob.Positions.ToArray();
+                mesh3D.normals = work.HasNormals ? work.DecodeJob.Normals.ToArray() : null;
+                mesh3D.textureCoordinates = work.HasTexCoords ? work.DecodeJob.TextureCoordinates.ToArray() : null;
+                mesh3D.colors = work.HasColors ? work.DecodeJob.Colors.ToArray() : null;
+                mesh3D.triangleIndices = work.IndexJob.TriangleIndices.AsArray().ToArray();
+
+                work.DecodeJob.Vertices.Dispose();
+                work.DecodeJob.Positions.Dispose();
+                work.DecodeJob.Normals.Dispose();
+                work.DecodeJob.TextureCoordinates.Dispose();
+                work.DecodeJob.Colors.Dispose();
+                work.IndexJob.Indices.Dispose();
+                work.IndexJob.TriangleIndices.Dispose();
+            }
+
+            // Build the node tree (lightweight — no data copies)
+            return BuildNodeTree(drawable, materials, meshWorkItems);
+        }
+
+        private struct MeshWorkItem
+        {
+            public MeshGeometry3D Mesh3D;
+            public MeshDecodeJob DecodeJob;
+            public MeshDecodeIndexJob IndexJob;
+            public RageMaterial Material;
+            public bool HasNormals;
+            public bool HasTexCoords;
+            public bool HasColors;
+            // Tree location
+            public int ModelIndex;
+            public int GeometryIndex;
+            public int MeshIndex;
+        }
+
+        private static void CollectMeshes(Drawable drawable, RageMaterial[] materials, List<MeshWorkItem> workItems)
+        {
+            for (int mi = 0; mi < drawable.Models.Count; mi++)
+            {
+                var model = drawable.Models[mi];
+                for (int gi = 0; gi < model.Geometries.Count; gi++)
+                {
+                    var geometry = model.Geometries[gi];
+                    for (int meshIdx = 0; meshIdx < geometry.Meshes.Count; meshIdx++)
+                    {
+                        var mesh = geometry.Meshes[meshIdx];
+                        int vertCount = mesh.DecodeUnityBurstVertexData().Length;
+
+                        var vertexData = new NativeArray<CleanVertex>(mesh.DecodeUnityBurstVertexData(), Allocator.TempJob);
+
+                        var decodeJob = new MeshDecodeJob
+                        {
+                            Vertices = vertexData,
+                            Positions = new NativeArray<Vector3>(vertexData.Length, Allocator.TempJob),
+                            Normals = new NativeArray<Vector3>(vertexData.Length, Allocator.TempJob),
+                            TextureCoordinates = new NativeArray<Vector2>(vertexData.Length, Allocator.TempJob),
+                            Colors = new NativeArray<Color32>(vertexData.Length, Allocator.TempJob),
+                            HasNormals = mesh.VertexHasNormal,
+                            HasTextureCoordinates = mesh.VertexHasTexture,
+                            HasColors = mesh.VertexHasColor,
+                        };
+
+                        var indexJob = new MeshDecodeIndexJob
+                        {
+                            Indices = new NativeArray<ushort>(mesh.DecodeIndexData(), Allocator.TempJob),
+                            TriangleIndices = new NativeList<int>(mesh.FaceCount * 3, Allocator.TempJob),
+                            FaceCount = mesh.FaceCount,
+                        };
+
+                        workItems.Add(new MeshWorkItem
+                        {
+                            Mesh3D = new MeshGeometry3D(),
+                            DecodeJob = decodeJob,
+                            IndexJob = indexJob,
+                            Material = materials[mesh.MaterialIndex],
+                            HasNormals = mesh.VertexHasNormal,
+                            HasTexCoords = mesh.VertexHasTexture,
+                            HasColors = mesh.VertexHasColor,
+                            ModelIndex = mi,
+                            GeometryIndex = gi,
+                            MeshIndex = meshIdx,
+                        });
+                    }
+                }
+            }
+        }
+
+        private static ModelNode BuildNodeTree(Drawable drawable, RageMaterial[] materials, List<MeshWorkItem> workItems)
+        {
+            var drawableModelGroup = new Model3DGroup();
+            var drawableModelNode = new ModelNode { DataModel = drawable, Model3D = drawableModelGroup, Name = "Drawable", NoCount = true };
+
+            int workIdx = 0;
+            for (int mi = 0; mi < drawable.Models.Count; mi++)
+            {
+                var model = drawable.Models[mi];
+                var modelGroup = new Model3DGroup();
+                var modelNode = new ModelNode { DataModel = model, Model3D = modelGroup, Name = "Model" };
+                drawableModelNode.Children.Add(modelNode);
+
+                for (int gi = 0; gi < model.Geometries.Count; gi++)
+                {
+                    var geometry = model.Geometries[gi];
+                    var geometryGroup = new Model3DGroup();
+                    var geometryNode = new ModelNode { DataModel = geometry, Model3D = geometryGroup, Name = "Geometry" };
+                    modelNode.Children.Add(geometryNode);
+
+                    for (int meshIdx = 0; meshIdx < geometry.Meshes.Count; meshIdx++)
+                    {
+                        var work = workItems[workIdx++];
+                        var model3D = new GeometryModel3D(work.Mesh3D, work.Material);
+                        geometryGroup.Children.Add(model3D);
+                        geometryNode.Children.Add(new ModelNode { DataModel = geometry.Meshes[meshIdx], Model3D = model3D, Name = "Mesh" });
+                    }
+
+                    modelGroup.Children.Add(geometryGroup);
+                }
+
+                drawableModelGroup.Children.Add(modelGroup);
+            }
+
+            return drawableModelNode;
+        }
+
+        private static RageMaterial[] ResolveMaterials(Drawable drawable, TextureFile[] textures)
+        {
             var materials = new RageMaterial[drawable.Materials.Count];
-            //Debug.Log($"Material Count: {materials.Length}");
 
             for (int i = 0; i < materials.Length; i++)
             {
@@ -129,11 +262,6 @@ namespace RageLib.Models
                 RageUnityTexture normalTex = null;
                 RageUnityTexture specularTex = null;
 
-                // Get main texture. Standard pattern: ParamNameHash.Texture ("DiffuseTex").
-                // Multi-layer terrain shaders (gta_terrain_va_3lyr/4lyr) and other variants
-                // don't have that key — they use TextureLayer0..N or shader-specific names.
-                // Fall back to scanning the dict for the first MaterialParamTexture rather
-                // than assuming Parameters[0] is the texture (it isn't in many shaders).
                 if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.Texture))
                 {
                     var texture = drawableMat.Parameters[(int)ParamNameHash.Texture] as MaterialParamTexture;
@@ -161,7 +289,6 @@ namespace RageLib.Models
                     if (texName == null) texName = "";
                 }
 
-                // Get normal texture
                 if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.NormalTexture))
                 {
                     var normalTexture = drawableMat.Parameters[(int)ParamNameHash.NormalTexture] as MaterialParamTexture;
@@ -172,7 +299,6 @@ namespace RageLib.Models
                     }
                 }
 
-                // Get specular texture
                 if (drawableMat.Parameters.ContainsKey((int)ParamNameHash.SpecularTexture))
                 {
                     var specularTexture = drawableMat.Parameters[(int)ParamNameHash.SpecularTexture] as MaterialParamTexture;
@@ -189,14 +315,11 @@ namespace RageLib.Models
                 material.specularTex = specularTex;
                 material.specularTextureName = specularTexName;
 
-                // Terrain shaders need every diffuse layer, not just the base. Collect each
-                // MaterialParamTexture in declaration order so MaterialBuilder can route them
-                // to the gta_terrain_va_3lyr / 4lyr shader's _Layer1.._Layer3 slots.
                 if (drawableMat.ShaderName != null &&
-                    drawableMat.ShaderName.IndexOf("terrain_va", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    drawableMat.ShaderName.IndexOf("terrain_va", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    var layerTexes = new System.Collections.Generic.List<RageUnityTexture>(4);
-                    var layerNames = new System.Collections.Generic.List<string>(4);
+                    var layerTexes = new List<RageUnityTexture>(4);
+                    var layerNames = new List<string>(4);
                     foreach (var param in drawableMat.Parameters.Values)
                     {
                         if (param is MaterialParamTexture tex)
@@ -213,89 +336,7 @@ namespace RageLib.Models
                 materials[i] = material;
             }
 
-            var drawableModelGroup = new Model3DGroup();
-            var drawableModelNode = new ModelNode { DataModel = drawable, Model3D = drawableModelGroup, Name = "Drawable", NoCount = true };
-
-            foreach (var model in drawable.Models)
-            {
-                var modelGroup = new Model3DGroup();
-                var modelNode = new ModelNode { DataModel = model, Model3D = modelGroup, Name = "Model" };
-                drawableModelNode.Children.Add(modelNode);
-                foreach (var geometry in model.Geometries)
-                {
-                    var geometryGroup = new Model3DGroup();
-                    var geometryNode = new ModelNode { DataModel = geometry, Model3D = geometryGroup, Name = "Geometry" };
-                    modelNode.Children.Add(geometryNode);
-
-                    for (int meshIndex = 0; meshIndex < geometry.Meshes.Count; meshIndex++)
-                    {
-                        var mesh = geometry.Meshes[meshIndex];
-                        var mesh3D = new MeshGeometry3D();
-
-                        var meshNode = new ModelNode { DataModel = mesh, Model3D = null, Name = "Mesh" };
-                        geometryNode.Children.Add(meshNode);
-
-                        var jobsVertexData = new NativeArray<CleanVertex>(mesh.DecodeUnityBurstVertexData(), Allocator.TempJob);
-
-                        var decodeJob = new MeshDecodeJob
-                        {
-                            Positions = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
-                            Normals = new NativeArray<Vector3>(jobsVertexData.Length, Allocator.TempJob),
-                            TextureCoordinates = new NativeArray<Vector2>(jobsVertexData.Length, Allocator.TempJob),
-                            Colors = new NativeArray<Color32>(jobsVertexData.Length, Allocator.TempJob),
-                            Vertices = jobsVertexData,
-                            HasNormals = mesh.VertexHasNormal,
-                            HasTextureCoordinates = mesh.VertexHasTexture,
-                            HasColors = mesh.VertexHasColor
-                        };
-
-                        var decodeIndexJob = new MeshDecodeIndexJob
-                        {
-                            Indices = new NativeArray<ushort>(mesh.DecodeIndexData(), Allocator.TempJob),
-                            TriangleIndices = new NativeList<int>(Allocator.TempJob),
-                            FaceCount = mesh.FaceCount
-                        };
-
-                        var handle = decodeJob.Schedule();
-                        var indexHandle = decodeIndexJob.Schedule(handle);
-                        indexHandle.Complete();
-
-                        mesh3D.positions.AddRange(decodeJob.Positions.ToArray());
-                        if (mesh.VertexHasNormal)
-                        {
-                            mesh3D.normals.AddRange(decodeJob.Normals.ToArray());
-                        }
-                        if (mesh.VertexHasTexture)
-                        {
-                            mesh3D.textureCoordinates.AddRange(decodeJob.TextureCoordinates.ToArray());
-                        }
-                        if (mesh.VertexHasColor)
-                        {
-                            mesh3D.colors.AddRange(decodeJob.Colors.ToArray());
-                        }
-                        mesh3D.triangleIndices.AddRange(decodeIndexJob.TriangleIndices.AsArray().ToArray());
-
-                        decodeJob.Vertices.Dispose();
-                        decodeJob.Positions.Dispose();
-                        decodeJob.Normals.Dispose();
-                        decodeJob.TextureCoordinates.Dispose();
-                        decodeJob.Colors.Dispose();
-                        decodeIndexJob.Indices.Dispose();
-                        decodeIndexJob.TriangleIndices.Dispose();
-
-                        var material = materials[geometry.Meshes[meshIndex].MaterialIndex];
-                        var model3D = new GeometryModel3D(mesh3D, material);
-                        geometryGroup.Children.Add(model3D);
-                        meshNode.Model3D = model3D;
-                    }
-
-                    modelGroup.Children.Add(geometryGroup);
-                }
-
-                drawableModelGroup.Children.Add(modelGroup);
-            }
-
-            return drawableModelNode;
+            return materials;
         }
 
         [BurstCompile]
@@ -317,21 +358,11 @@ namespace RageLib.Models
                     Positions[i] = Vertices[i].Position;
 
                     if (HasNormals)
-                    {
                         Normals[i] = Vertices[i].Normal;
-                    }
                     if (HasTextureCoordinates)
-                    {
                         TextureCoordinates[i] = Vertices[i].TextureCoordinates;
-                    }
                     if (HasColors)
                     {
-                        // RAGE/D3D9 stores diffuse color packed as ARGB in a uint:
-                        //   byte order in memory (little-endian): B, G, R, A
-                        // Convert to Unity Color32 (RGBA byte order). Terrain shaders read
-                        // the resulting RGB as per-vertex layer-blend weights — getting the
-                        // channel order wrong shows the right blend in the wrong area, which
-                        // is exactly the symptom we hit before this fix.
                         uint argb = Vertices[i].DiffuseColor;
                         byte b = (byte)(argb        & 0xFF);
                         byte g = (byte)((argb >> 8)  & 0xFF);
@@ -360,6 +391,5 @@ namespace RageLib.Models
                 }
             }
         }
-
     }
 }
