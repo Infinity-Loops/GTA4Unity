@@ -11,8 +11,8 @@ Shader "GTA IV/gta_default"
         Tags
         {
             "RenderPipeline" = "UniversalPipeline"
-            "RenderType" = "TransparentCutout"
-            "Queue" = "AlphaTest"
+            "RenderType" = "Opaque"
+            "Queue" = "Geometry"
         }
 
         Pass

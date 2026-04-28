@@ -127,11 +127,11 @@ namespace IVUnity.ECS
                 bool hasChildLodDist = em.HasComponent<ChildLodDist>(e);
                 bool hasChildCount = em.HasComponent<LodChildCount>(e);
                 bool hasLodLevel = em.HasComponent<LodLevel>(e);
-                bool isParentType = hasLodLevel &&
-                    (em.GetComponentData<LodLevel>(e).Value == LodType.LOD ||
-                     em.GetComponentData<LodLevel>(e).Value == LodType.SLOD);
+                LodType lodType = hasLodLevel ? em.GetComponentData<LodLevel>(e).Value : LodType.OrphanHD;
+                bool isParentType = lodType == LodType.LOD || lodType == LodType.SLOD;
+                bool isBaseOrphanLod = lodType == LodType.OrphanHD && em.HasComponent<BaseLayerTag>(e);
 
-                if (isParentType)
+                if (isParentType || isBaseOrphanLod)
                 {
                     int totalChildren = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
                     renderingChildCount.TryGetValue(e, out int attached);
@@ -145,8 +145,8 @@ namespace IVUnity.ECS
                     }
                     else if (totalChildren == 0 && em.HasComponent<BaseLayerTag>(e))
                     {
-                        // Childless LOD in base layer: HD is in streaming WPLs (no LodRef link).
-                        // Fade using assumed HD coverage — conservative to avoid gaps.
+                        // Childless LOD/SLOD (by name) in base layer: HD is in streaming WPLs.
+                        // No within-IPL LOD chain — fade using assumed HD coverage.
                         childLodDist = 50f * lodScale;
                     }
                     else
@@ -178,7 +178,6 @@ namespace IVUnity.ECS
                 // which the Loaded query filter already ensures.
 
                 #if UNITY_EDITOR
-                if (isParentType)
                 {
                     int dbgTotal = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
                     renderingChildCount.TryGetValue(e, out int dbgAttached);

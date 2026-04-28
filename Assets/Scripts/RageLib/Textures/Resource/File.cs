@@ -25,7 +25,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Textures.Resource
 {
-    internal class File : IDisposable
+    public class File : IDisposable
     {
         private ResourceFile _resourceFile;
 

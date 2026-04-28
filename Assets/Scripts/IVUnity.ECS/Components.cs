@@ -10,6 +10,11 @@ namespace IVUnity.ECS
         public FixedString64Bytes Value;
     }
 
+    public struct DebugModelName : IComponentData
+    {
+        public FixedString64Bytes Value;
+    }
+
     public enum FadeReason : byte
     {
         None = 0,

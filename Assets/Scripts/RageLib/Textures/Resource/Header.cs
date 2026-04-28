@@ -25,7 +25,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Textures.Resource
 {
-    internal class Header : IFileAccess
+    public class Header : IFileAccess
     {
         public uint VTable { get; private set; }
 

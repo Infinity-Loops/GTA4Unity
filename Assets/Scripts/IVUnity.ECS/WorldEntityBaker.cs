@@ -61,11 +61,18 @@ namespace IVUnity.ECS
                     if (!objsByHash.ContainsKey(h)) objsByHash[h] = obj;
                     if (!hashToName.ContainsKey(h)) hashToName[h] = obj.modelName;
                 }
+                foreach (var anim in ide.items_anim)
+                {
+                    if (string.IsNullOrEmpty(anim.modelName)) continue;
+                    Item_OBJS animObj = anim;
+                    if (!objsDict.ContainsKey(anim.modelName)) objsDict[anim.modelName] = animObj;
+                    uint h = RageLib.Common.Hasher.Hash(anim.modelName);
+                    if (!objsByHash.ContainsKey(h)) objsByHash[h] = animObj;
+                    if (!hashToName.ContainsKey(h)) hashToName[h] = anim.modelName;
+                }
                 foreach (var tobj in ide.items_tobj)
                 {
                     if (string.IsNullOrEmpty(tobj.modelName)) continue;
-                    // Mark as TOBJ (time-object / spawner / non-render) via the same flag
-                    // HighPerformanceLoader uses to filter them out downstream.
                     var marked = tobj;
                     marked.flag2 = unchecked((int)0x80000000);
                     if (!objsDict.ContainsKey(tobj.modelName)) objsDict[tobj.modelName] = marked;
@@ -120,7 +127,7 @@ namespace IVUnity.ECS
             {
                 var def = kv.Value;
 
-                // Skip TOBJ at catalog time — no point loading meshes we'll never render.
+                // Skip TOBJ at catalog time — timed objects (emissive windows, night variants).
                 if ((def.flag2 & unchecked((int)0x80000000)) != 0) continue;
 
                 // Prefer the wdd-linked file name if the IDE specifies one; else search by modelName.
@@ -253,10 +260,15 @@ namespace IVUnity.ECS
                     sourceId++;
 
                     // Resolve name: prefer inst.name, fall back to hash lookup, fall back to "0x{hex}"
+                    // The WPL parser sets inst.name to "0x{hash}" when Hashes.table (IDE-only)
+                    // can't resolve. We still need to check objsByHash which includes synthesis
+                    // entries for model files without IDE entries.
                     string instanceName = inst.name;
                     Item_OBJS objDef = null;
+                    bool needsHashLookup = string.IsNullOrEmpty(instanceName)
+                        || (instanceName.StartsWith("0x") && inst.hash != 0);
 
-                    if (string.IsNullOrEmpty(instanceName) && inst.hash != 0)
+                    if (needsHashLookup && inst.hash != 0)
                     {
                         if (objsByHash.TryGetValue((uint)inst.hash, out objDef))
                         {
@@ -266,17 +278,21 @@ namespace IVUnity.ECS
                         {
                             instanceName = resolved;
                         }
-                        else
+                        else if (string.IsNullOrEmpty(inst.name))
                         {
                             instanceName = $"0x{inst.hash:x8}";
                         }
                     }
 
-                    if (string.IsNullOrEmpty(instanceName)) { skippedUnresolved++; continue; }
+                    if (string.IsNullOrEmpty(instanceName))
+                    {
+                        skippedUnresolved++;
+                        continue;
+                    }
 
                     if (objDef == null) objsDict.TryGetValue(instanceName, out objDef);
 
-                    // Skip TOBJ-flagged definitions — they're non-render spawners.
+                    // Skip TOBJ-flagged definitions — timed objects (emissive windows, night variants).
                     if (objDef != null && (objDef.flag2 & unchecked((int)0x80000000)) != 0)
                     {
                         skippedTobj++;
@@ -287,6 +303,7 @@ namespace IVUnity.ECS
                     uint hash = ModelCatalog.Hash(instanceName);
                     if (!catalog.TryGet(hash, out _))
                     {
+                        Debug.LogWarning($"[Baker] No catalog: '{instanceName}' (instHash=0x{(uint)inst.hash:X8}) in {ipl.name}");
                         skippedUnresolved++;
                         continue;
                     }
@@ -346,11 +363,37 @@ namespace IVUnity.ECS
                         drawDist = objDef.drawDistance[0];
                     em.SetComponentData(entity, new DrawDist { Value = drawDist });
 
-                    // Bound radius from IDE boundsSphere.w (pre-computed bounding sphere radius)
-                    float boundRadius = objDef?.boundsSphere.w ?? 0f;
+                    // XZ bound radius from IDE boundsMin/boundsMax + sphere center offset.
+                    // Use XZ extent only (not 3D sphere) for accurate 2D distance checks.
+                    // Include sphere center offset so the radius reaches the farthest XZ point
+                    // from the entity origin. IDE coords: X=east, Y=north (our XZ plane).
+                    float boundRadius = 0f;
+                    if (objDef != null)
+                    {
+                        float xMin = objDef.boundsMin.x;
+                        float xMax = objDef.boundsMax.x;
+                        float yMin = objDef.boundsMin.y; // RAGE Y = north = Unity Z
+                        float yMax = objDef.boundsMax.y;
+
+                        float halfX = (xMax - xMin) * 0.5f;
+                        float halfY = (yMax - yMin) * 0.5f;
+                        float centerOffX = (xMax + xMin) * 0.5f;
+                        float centerOffY = (yMax + yMin) * 0.5f;
+
+                        float maxExtentX = Mathf.Abs(centerOffX) + halfX;
+                        float maxExtentY = Mathf.Abs(centerOffY) + halfY;
+                        boundRadius = Mathf.Max(maxExtentX, maxExtentY);
+                    }
                     em.AddComponentData(entity, new BoundRadius { Value = boundRadius });
 
                     em.SetComponentData(entity, new InstanceOrigin { SourceId = sourceId });
+
+                    #if UNITY_EDITOR
+                    em.AddComponentData(entity, new DebugModelName
+                    {
+                        Value = new Unity.Collections.FixedString64Bytes(instanceName ?? "unknown")
+                    });
+                    #endif
 
                     int2 cell = CellMath.PositionToCell(new float3(uPos.x, uPos.y, uPos.z), cellSize);
                     em.SetSharedComponent(entity, new CellIndex { Cell = cell });

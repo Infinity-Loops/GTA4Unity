@@ -56,6 +56,7 @@ namespace RageLib.Models
             {
                 File.Open(stream);
             }
+            _data = null;
         }
 
         public TextureFile EmbeddedTextureFile

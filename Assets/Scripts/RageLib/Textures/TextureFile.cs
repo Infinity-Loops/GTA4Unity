@@ -66,6 +66,7 @@ namespace RageLib.Textures
                 _file.Open(stream);
                 BuildTextures();
             }
+            _data = null;
         }
 
         public void Open(Stream systemMemory, Stream graphicsMemory)

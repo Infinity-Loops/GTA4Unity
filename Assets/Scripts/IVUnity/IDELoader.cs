@@ -29,6 +29,14 @@ public class IDELoader
             }
         }
 
+        foreach (var anim in ide.items_anim)
+        {
+            if (!string.IsNullOrEmpty(anim.modelName) && !objsDict.ContainsKey(anim.modelName))
+            {
+                objsDict[anim.modelName] = anim;
+            }
+        }
+
         foreach (var tobj in ide.items_tobj)
         {
             if (!string.IsNullOrEmpty(tobj.modelName) && !tobjDict.ContainsKey(tobj.modelName))

@@ -200,7 +200,8 @@ half3 GTA_LightingWithShadow(half3 albedo, float3 normalWS, float3 positionWS)
     half NdotL = dot(normalWS, mainLight.direction) * 0.5 + 0.5;
     half shadow = mainLight.shadowAttenuation;
     half3 ambient = max(SampleSH(normalWS), 0.03);
-    return max(albedo * (ambient + mainLight.color * NdotL * shadow), 0.0);
+    half3 lighting = min(ambient + mainLight.color * NdotL * shadow, 1.0);
+    return max(albedo * lighting, 0.0);
 }
 
 // ---------------------------------------------------------------------------

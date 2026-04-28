@@ -20,7 +20,7 @@
 
 namespace RageLib.Textures.Resource
 {
-    internal enum D3DFormat
+    public enum D3DFormat
     {
         DXT1 = 0x31545844,
         DXT3 = 0x33545844,

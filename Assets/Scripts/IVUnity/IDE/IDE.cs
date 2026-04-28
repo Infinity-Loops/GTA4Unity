@@ -85,7 +85,7 @@ public class IDE
             IDE_Item item = readItem switch
             {
                 IDEReader.i2DFX => new Item_2DFX(),
-                IDEReader.iANIM => new Item_ANIM(),
+                IDEReader.iANIM => Track(items_anim, new Item_ANIM()),
                 IDEReader.iCARS => Track(items_cars, new Item_CARS()),
                 IDEReader.iHIER => new Item_HIER(),
                 IDEReader.iMLO  => new Item_MLO(),

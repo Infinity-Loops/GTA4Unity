@@ -33,7 +33,7 @@ namespace IVUnity.ECS
             MeshCacheSizeMB       = 2048,
             StreamInDistance      = 300f,
             StreamOutDistance     = 500f,
-            LodDistanceScale      = 1.5f,
+            LodDistanceScale      = 1f,
         };
     }
 }

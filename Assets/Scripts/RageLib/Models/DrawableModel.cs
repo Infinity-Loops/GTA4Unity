@@ -1,5 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
+using RageLib.Textures;
+using RageLib.Textures.Decoder;
+using RageLib.Textures.Resource;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -93,11 +96,13 @@ public class RageUnityTexture
     }
 
     public string name;
+    public int level;
     public int width;
     public int height;
     public TextureFormat format;
+    public TextureType rageTextureType;
     public bool mipChain;
-    public byte[] pixels;
+    public RageLib.Textures.Texture textureFile;
 
     // Cache the materialized Unity Texture2D so subsequent callers receive the SAME
     // instance. Without this, every GetUnityTexture() call allocated a fresh Texture2D
@@ -114,12 +119,17 @@ public class RageUnityTexture
         var texture = new Texture2D(width, height, format, mipChain);
         texture.name = name;
 
-        if (pixels != null && pixels.Length > 0)
+        if (textureFile != null)
         {
+            byte[] pixels = textureFile.GetTextureData(level);
+            if (rageTextureType == TextureType.DXT3)
+            {
+                pixels = TextureDecoder.ConvertDXT3ToDXT5(pixels);
+            }
             texture.LoadRawTextureData(pixels);
         }
 
-        texture.Apply(false, false);
+        texture.Apply(false, true);
         cached = texture;
         return texture;
     }

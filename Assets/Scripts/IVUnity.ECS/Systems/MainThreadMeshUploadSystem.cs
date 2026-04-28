@@ -189,7 +189,7 @@ namespace IVUnity.ECS
         // (white). This is the actual indicator of "we got nothing useful".
         private static bool HasRealPixels(global::RageUnityTexture rut)
         {
-            return rut != null && rut.pixels != null && rut.pixels.Length > 0;
+            return rut != null && rut.textureFile != null;
         }
 
         // Diagnostic: collect (texture-name, slot) misses with per-key occurrence counts so

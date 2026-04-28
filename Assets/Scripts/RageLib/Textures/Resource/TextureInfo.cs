@@ -25,7 +25,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Textures.Resource
 {
-    internal class TextureInfo : IFileAccess
+    public class TextureInfo : IFileAccess
     {
         public File File { get; set; }
 
