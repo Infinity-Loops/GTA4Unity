@@ -6,15 +6,6 @@ using Unity.Transforms;
 
 namespace IVUnity.ECS
 {
-    /// <summary>
-    /// Priority-based dispatch of async model parse jobs. Two passes per frame:
-    ///   1. LOD models first (LodTag) — they're small, fast, and provide the initial
-    ///      world view (skyline, distant islands). GTA IV loads these before anything else.
-    ///   2. HD models second, sorted by distance to camera (closest first).
-    ///
-    /// Within each pass, unique model hashes are dispatched up to MaxLoadsPerFrame total.
-    /// Models already in MeshCache (Loading/Loaded/Failed) are skipped.
-    /// </summary>
     [UpdateInGroup(typeof(WorldStreamingSystemGroup))]
     [UpdateAfter(typeof(StreamingDecisionSystem))]
     public partial class ModelLoadDispatchSystem : SystemBase
@@ -22,6 +13,10 @@ namespace IVUnity.ECS
         private ModelCatalog catalog;
         private MeshCache    meshCache;
         private ModelLoader  loader;
+
+        private EntityQuery lodPendingQuery;
+        private EntityQuery hdPendingQuery;
+        private readonly HashSet<uint> seen = new HashSet<uint>();
 
         public void Configure(ModelCatalog cat, MeshCache cache, ModelLoader loader)
         {
@@ -33,6 +28,15 @@ namespace IVUnity.ECS
         protected override void OnCreate()
         {
             RequireForUpdate<StreamingConfig>();
+
+            lodPendingQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, ModelRef, StreamingState, LodTag, LocalTransform>()
+                .Build(EntityManager);
+
+            hdPendingQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, ModelRef, StreamingState, LocalTransform>()
+                .WithNone<LodTag>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
@@ -41,52 +45,28 @@ namespace IVUnity.ECS
 
             var cfg = SystemAPI.GetSingleton<StreamingConfig>();
             int budget = cfg.MaxLoadsPerFrame;
-            var seen = new HashSet<uint>();
+            seen.Clear();
 
-            // --- Pass 1: LOD models (highest priority) ---
-            budget = DispatchPending(
-                withLodTag: true,
-                budget, seen);
-
-            // --- Pass 2: everything else (HD + standalone), closest first ---
+            budget = DispatchPending(lodPendingQuery, budget);
             if (budget > 0)
-            {
-                budget = DispatchPending(
-                    withLodTag: false,
-                    budget, seen);
-            }
+                DispatchPending(hdPendingQuery, budget);
         }
 
-        private int DispatchPending(bool withLodTag, int budget, HashSet<uint> seen)
+        private int DispatchPending(EntityQuery query, int budget)
         {
-            EntityQuery query;
-            if (withLodTag)
-            {
-                query = new EntityQueryBuilder(Allocator.Temp)
-                    .WithAll<WorldInstanceTag, ModelRef, StreamingState, LodTag, LocalTransform>()
-                    .Build(EntityManager);
-            }
-            else
-            {
-                query = new EntityQueryBuilder(Allocator.Temp)
-                    .WithAll<WorldInstanceTag, ModelRef, StreamingState, LocalTransform>()
-                    .WithNone<LodTag>()
-                    .Build(EntityManager);
-            }
             query.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Pending });
 
-            if (query.IsEmpty) return budget;
+            if (query.IsEmpty) { query.ResetFilter(); return budget; }
 
             using var modelRefs  = query.ToComponentDataArray<ModelRef>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            query.ResetFilter();
 
-            // Both passes sort by distance — closest first. For LODs this means nearby
-            // islands/buildings get their LOD before distant skyline. For HD this means
-            // objects around the player load before distant ones.
             var focus = SystemAPI.GetSingleton<FocusPointData>();
-            var order = SortByDistance(transforms, focus.Position);
-
             int count = modelRefs.Length;
+
+            using var order = SortByDistance(transforms, focus.Position);
+
             for (int idx = 0; idx < count && budget > 0; idx++)
             {
                 int i = order[idx];
@@ -111,20 +91,28 @@ namespace IVUnity.ECS
             return budget;
         }
 
-        private static int[] SortByDistance(NativeArray<LocalTransform> transforms, float3 focus)
+        private static NativeArray<int> SortByDistance(NativeArray<LocalTransform> transforms, float3 focus)
         {
             int n = transforms.Length;
-            var indices = new int[n];
-            var dists   = new float[n];
+            var pairs = new NativeArray<float2>(n, Allocator.Temp);
             for (int i = 0; i < n; i++)
             {
-                indices[i] = i;
                 float dx = transforms[i].Position.x - focus.x;
                 float dz = transforms[i].Position.z - focus.z;
-                dists[i] = dx * dx + dz * dz;
+                pairs[i] = new float2(dx * dx + dz * dz, math.asfloat(i));
             }
-            System.Array.Sort(dists, indices);
+            pairs.Sort(new DistComparer());
+
+            var indices = new NativeArray<int>(n, Allocator.Temp);
+            for (int i = 0; i < n; i++)
+                indices[i] = math.asint(pairs[i].y);
+            pairs.Dispose();
             return indices;
+        }
+
+        private struct DistComparer : IComparer<float2>
+        {
+            public int Compare(float2 a, float2 b) => a.x.CompareTo(b.x);
         }
     }
 }

@@ -23,6 +23,10 @@ namespace IVUnity.ECS
         private Unity.Jobs.JobHandle pendingDormantJob;
         private bool hasPendingDormant;
 
+        private EntityCommandBuffer pendingLoadedEcb;
+        private Unity.Jobs.JobHandle pendingLoadedJob;
+        private bool hasPendingLoaded;
+
         protected override void OnCreate()
         {
             RequireForUpdate<FocusPointData>();
@@ -48,13 +52,20 @@ namespace IVUnity.ECS
             var cfg = SystemAPI.GetSingleton<StreamingConfig>();
             float lodScale = cfg.LodDistanceScale;
 
-            // Flush previous frame's dormant ECB if ready
+            // Flush previous frame's deferred ECBs
             if (hasPendingDormant)
             {
                 pendingDormantJob.Complete();
                 pendingDormantEcb.Playback(EntityManager);
                 pendingDormantEcb.Dispose();
                 hasPendingDormant = false;
+            }
+            if (hasPendingLoaded)
+            {
+                pendingLoadedJob.Complete();
+                pendingLoadedEcb.Playback(EntityManager);
+                pendingLoadedEcb.Dispose();
+                hasPendingLoaded = false;
             }
 
             // Dormant check: only when focus moved enough AND every N frames
@@ -114,7 +125,7 @@ namespace IVUnity.ECS
 
             var ecb = new EntityCommandBuffer(Allocator.TempJob);
 
-            new LoadedCheckJob
+            var job = new LoadedCheckJob
             {
                 CamX = focus.Position.x,
                 CamZ = focus.Position.z,
@@ -125,10 +136,13 @@ namespace IVUnity.ECS
                 DrawDistHandle = GetComponentTypeHandle<DrawDist>(true),
                 BoundRadiusHandle = GetComponentTypeHandle<BoundRadius>(true),
                 Ecb = ecb.AsParallelWriter(),
-            }.ScheduleParallel(loadedQuery, Dependency).Complete();
+            }.ScheduleParallel(loadedQuery, Dependency);
 
-            ecb.Playback(EntityManager);
-            ecb.Dispose();
+            pendingLoadedEcb = ecb;
+            pendingLoadedJob = job;
+            hasPendingLoaded = true;
+            Dependency = job;
+
             loadedQuery.ResetFilter();
         }
 

@@ -1,3 +1,4 @@
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -5,27 +6,32 @@ using Unity.Transforms;
 
 namespace IVUnity.ECS
 {
-    /// <summary>
-    /// LOD alpha system mirroring RAGE architecture (from OpenRage GTA V source):
-    ///
-    /// 1. CalcAlphaFade: per-entity alpha from own distance (fade at draw distance edge)
-    /// 2. FadeDownRelativeToChildren: parent fades when camera within childLodDist
-    ///    - Gated by all children being within their draw distance (RAGE: AllChildrenAttached)
-    ///    - Uses ChildLodDist (max of children's drawDist, set during baking)
-    /// 3. Force parent visible if child not loaded (Part C safety)
-    ///
-    /// RAGE refs: CLodMgr::UpdateAlphaPt2_FadeDownRelativeToChildren,
-    ///            CLodMgr::CalcCrossFadeAlpha, PostScan.cpp alpha update pass #2
-    /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderFirst = true)]
     public partial class LodFadeSystem : SystemBase
     {
         private const float FadeZone = 20f;
 
+        private EntityQuery hdChildQuery;
+        private EntityQuery loadedRootQuery;
+        private EntityQuery subMeshQuery;
+
         protected override void OnCreate()
         {
             RequireForUpdate<FocusPointData>();
             RequireForUpdate<StreamingConfig>();
+
+            hdChildQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, LodRef, LocalTransform, DrawDist, StreamingState>()
+                .Build(EntityManager);
+
+            loadedRootQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, LocalTransform, DrawDist, StreamingState>()
+                .Build(EntityManager);
+
+            subMeshQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<SubMeshTag, Parent>()
+                .WithAllRW<StippleAlpha>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
@@ -33,72 +39,243 @@ namespace IVUnity.ECS
             var focus = SystemAPI.GetSingleton<FocusPointData>();
             var cfg = SystemAPI.GetSingleton<StreamingConfig>();
             float lodScale = cfg.LodDistanceScale;
-            var em = EntityManager;
             float camX = focus.Position.x;
             float camZ = focus.Position.z;
 
-            // Step 1: count children within their draw distance per LOD parent.
-            // RAGE: AllChildrenAttached — in engine children beyond range aren't streamed in.
-            // We load everything, so gate on draw distance instead.
-            var renderingChildCount = new NativeHashMap<Entity, int>(256, Allocator.Temp);
+            var loadedFilter = new StreamingState { Value = StreamingStateValue.Loaded };
 
-            var loadedHdQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, LodRef, LocalTransform, DrawDist, StreamingState>()
-                .Build(em);
-            loadedHdQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
+            // Step 1: count HD children within draw distance per LOD parent
+            hdChildQuery.SetSharedComponentFilter(loadedFilter);
+            int hdCount = hdChildQuery.CalculateEntityCount();
+            var renderingChildCount = new NativeParallelHashMap<Entity, int>(
+                math.max(hdCount, 64), Allocator.TempJob);
 
-            if (!loadedHdQuery.IsEmpty)
+            var dep = Dependency;
+
+            if (hdCount > 0)
             {
-                using var lodRefs    = loadedHdQuery.ToComponentDataArray<LodRef>(Allocator.Temp);
-                using var childTrans = loadedHdQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                using var childDists = loadedHdQuery.ToComponentDataArray<DrawDist>(Allocator.Temp);
+                dep = new CountChildrenJob
+                {
+                    CamX = camX,
+                    CamZ = camZ,
+                    LodScale = lodScale,
+                    LodRefHandle = GetComponentTypeHandle<LodRef>(true),
+                    TransformHandle = GetComponentTypeHandle<LocalTransform>(true),
+                    DrawDistHandle = GetComponentTypeHandle<DrawDist>(true),
+                    ChildCount = renderingChildCount,
+                }.Schedule(hdChildQuery, dep);
+            }
+            hdChildQuery.ResetFilter();
 
-                for (int i = 0; i < lodRefs.Length; i++)
+            // Step 2: compute alpha per loaded root entity
+            loadedRootQuery.SetSharedComponentFilter(loadedFilter);
+            int rootCount = loadedRootQuery.CalculateEntityCount();
+            if (rootCount == 0)
+            {
+                dep.Complete();
+                renderingChildCount.Dispose();
+                loadedRootQuery.ResetFilter();
+                return;
+            }
+
+            var alphaMap = new NativeParallelHashMap<Entity, float>(rootCount, Allocator.TempJob);
+
+            dep = new ComputeAlphaJob
+            {
+                CamX = camX,
+                CamZ = camZ,
+                LodScale = lodScale,
+                FadeZone = FadeZone,
+                EntityHandle = GetEntityTypeHandle(),
+                TransformHandle = GetComponentTypeHandle<LocalTransform>(true),
+                DrawDistHandle = GetComponentTypeHandle<DrawDist>(true),
+                BoundRadiusHandle = GetComponentTypeHandle<BoundRadius>(true),
+                LodLevelHandle = GetComponentTypeHandle<LodLevel>(true),
+                ChildLodDistHandle = GetComponentTypeHandle<ChildLodDist>(true),
+                LodChildCountHandle = GetComponentTypeHandle<LodChildCount>(true),
+                BaseLayerHandle = GetComponentTypeHandle<BaseLayerTag>(true),
+                RenderingChildCount = renderingChildCount,
+                AlphaMap = alphaMap.AsParallelWriter(),
+            }.Schedule(loadedRootQuery, dep);
+
+            loadedRootQuery.ResetFilter();
+
+            // Step 3: write alpha to sub-mesh children — chained, single Complete()
+            if (!subMeshQuery.IsEmpty)
+            {
+                dep = new WriteAlphaJob
+                {
+                    ParentHandle = GetComponentTypeHandle<Parent>(true),
+                    AlphaHandle = GetComponentTypeHandle<StippleAlpha>(false),
+                    AlphaMap = alphaMap,
+                }.ScheduleParallel(subMeshQuery, dep);
+            }
+
+            dep.Complete();
+            alphaMap.Dispose();
+            renderingChildCount.Dispose();
+
+            #if UNITY_EDITOR
+            WriteDebugData(camX, camZ, lodScale);
+            #endif
+        }
+
+        // Step 1: single-threaded Burst — multiple children can map to same parent
+        [BurstCompile]
+        struct CountChildrenJob : IJobChunk
+        {
+            public float CamX, CamZ, LodScale;
+
+            [ReadOnly] public ComponentTypeHandle<LodRef> LodRefHandle;
+            [ReadOnly] public ComponentTypeHandle<LocalTransform> TransformHandle;
+            [ReadOnly] public ComponentTypeHandle<DrawDist> DrawDistHandle;
+
+            public NativeParallelHashMap<Entity, int> ChildCount;
+
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex,
+                bool useEnabledMask, in Unity.Burst.Intrinsics.v128 chunkEnabledMask)
+            {
+                var lodRefs = chunk.GetNativeArray(ref LodRefHandle);
+                var transforms = chunk.GetNativeArray(ref TransformHandle);
+                var drawDists = chunk.GetNativeArray(ref DrawDistHandle);
+
+                for (int i = 0; i < chunk.Count; i++)
                 {
                     Entity lod = lodRefs[i].LodEntity;
                     if (lod == Entity.Null) continue;
 
-                    float cdx = childTrans[i].Position.x - camX;
-                    float cdz = childTrans[i].Position.z - camZ;
-                    float childDistSq = cdx * cdx + cdz * cdz;
-                    float childRange = childDists[i].Value * lodScale;
+                    float dx = transforms[i].Position.x - CamX;
+                    float dz = transforms[i].Position.z - CamZ;
+                    float range = drawDists[i].Value * LodScale;
 
-                    if (childDistSq < childRange * childRange)
+                    if (dx * dx + dz * dz < range * range)
                     {
-                        renderingChildCount.TryGetValue(lod, out int count);
-                        renderingChildCount[lod] = count + 1;
+                        ChildCount.TryGetValue(lod, out int count);
+                        ChildCount[lod] = count + 1;
                     }
                 }
             }
+        }
 
-            // Step 2: compute alpha per Loaded entity
-            var loadedQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, LocalTransform, DrawDist, StreamingState>()
-                .Build(em);
-            loadedQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
-            if (loadedQuery.IsEmpty)
+        // Step 2: single-threaded Burst — reads shared map, writes unique keys
+        [BurstCompile]
+        struct ComputeAlphaJob : IJobChunk
+        {
+            public float CamX, CamZ, LodScale, FadeZone;
+
+            [ReadOnly] public EntityTypeHandle EntityHandle;
+            [ReadOnly] public ComponentTypeHandle<LocalTransform> TransformHandle;
+            [ReadOnly] public ComponentTypeHandle<DrawDist> DrawDistHandle;
+            [ReadOnly] public ComponentTypeHandle<BoundRadius> BoundRadiusHandle;
+            [ReadOnly] public ComponentTypeHandle<LodLevel> LodLevelHandle;
+            [ReadOnly] public ComponentTypeHandle<ChildLodDist> ChildLodDistHandle;
+            [ReadOnly] public ComponentTypeHandle<LodChildCount> LodChildCountHandle;
+            [ReadOnly] public ComponentTypeHandle<BaseLayerTag> BaseLayerHandle;
+
+            [ReadOnly] public NativeParallelHashMap<Entity, int> RenderingChildCount;
+            public NativeParallelHashMap<Entity, float>.ParallelWriter AlphaMap;
+
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex,
+                bool useEnabledMask, in Unity.Burst.Intrinsics.v128 chunkEnabledMask)
             {
-                renderingChildCount.Dispose();
-                return;
+                var entities = chunk.GetNativeArray(EntityHandle);
+                var transforms = chunk.GetNativeArray(ref TransformHandle);
+                var drawDists = chunk.GetNativeArray(ref DrawDistHandle);
+
+                bool hasBounds = chunk.Has(ref BoundRadiusHandle);
+                var bounds = hasBounds ? chunk.GetNativeArray(ref BoundRadiusHandle) : default;
+
+                bool hasLodLevel = chunk.Has(ref LodLevelHandle);
+                var lodLevels = hasLodLevel ? chunk.GetNativeArray(ref LodLevelHandle) : default;
+
+                bool hasChildLodDist = chunk.Has(ref ChildLodDistHandle);
+                var childLodDists = hasChildLodDist ? chunk.GetNativeArray(ref ChildLodDistHandle) : default;
+
+                bool hasChildCount = chunk.Has(ref LodChildCountHandle);
+                var childCounts = hasChildCount ? chunk.GetNativeArray(ref LodChildCountHandle) : default;
+
+                bool hasBaseLayer = chunk.Has(ref BaseLayerHandle);
+
+                for (int i = 0; i < chunk.Count; i++)
+                {
+                    float dx = transforms[i].Position.x - CamX;
+                    float dz = transforms[i].Position.z - CamZ;
+                    float dist = math.sqrt(dx * dx + dz * dz);
+
+                    float radius = hasBounds ? bounds[i].Value : 0f;
+                    float effectiveDraw = drawDists[i].Value * LodScale + radius;
+
+                    float fadeUp = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
+                    float alpha = math.saturate(fadeUp * 4.0f);
+                    if (alpha > 0.9f) alpha = 1.0f;
+
+                    LodType lodType = hasLodLevel ? lodLevels[i].Value : LodType.OrphanHD;
+                    bool isParentType = lodType == LodType.LOD || lodType == LodType.SLOD;
+                    bool isBaseOrphanLod = lodType == LodType.OrphanHD && hasBaseLayer;
+
+                    if (isParentType || isBaseOrphanLod)
+                    {
+                        Entity e = entities[i];
+                        int totalChildren = hasChildCount ? childCounts[i].Value : 0;
+                        RenderingChildCount.TryGetValue(e, out int attached);
+
+                        float childLodDist;
+
+                        if (totalChildren > 0 && attached >= totalChildren && hasChildLodDist)
+                            childLodDist = childLodDists[i].Value * LodScale;
+                        else if (totalChildren == 0 && hasBaseLayer)
+                            childLodDist = 50f * LodScale;
+                        else
+                            childLodDist = -1f;
+
+                        if (childLodDist >= 0f)
+                        {
+                            float fadeStart = childLodDist + FadeZone;
+                            if (dist <= fadeStart)
+                            {
+                                float t = math.saturate((dist - childLodDist) / FadeZone);
+                                alpha = math.min(alpha, t);
+                                if (alpha < 0.02f) alpha = 0.0f;
+                            }
+                        }
+                    }
+
+                    AlphaMap.TryAdd(entities[i], alpha);
+                }
             }
+        }
 
-            using var entities   = loadedQuery.ToEntityArray(Allocator.Temp);
-            using var transforms = loadedQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            using var drawDists  = loadedQuery.ToComponentDataArray<DrawDist>(Allocator.Temp);
+        // Step 3: parallel Burst — each child writes its own StippleAlpha
+        [BurstCompile]
+        struct WriteAlphaJob : IJobChunk
+        {
+            [ReadOnly] public ComponentTypeHandle<Parent> ParentHandle;
+            public ComponentTypeHandle<StippleAlpha> AlphaHandle;
+            [ReadOnly] public NativeParallelHashMap<Entity, float> AlphaMap;
 
-            var childQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<SubMeshTag, Parent, StippleAlpha>()
-                .Build(em);
-            if (childQuery.IsEmpty)
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex,
+                bool useEnabledMask, in Unity.Burst.Intrinsics.v128 chunkEnabledMask)
             {
-                renderingChildCount.Dispose();
-                return;
+                var parents = chunk.GetNativeArray(ref ParentHandle);
+                var alphas = chunk.GetNativeArray(ref AlphaHandle);
+
+                for (int i = 0; i < chunk.Count; i++)
+                {
+                    if (AlphaMap.TryGetValue(parents[i].Value, out float a))
+                        alphas[i] = new StippleAlpha { Value = a };
+                }
             }
+        }
 
-            using var childEntities = childQuery.ToEntityArray(Allocator.Temp);
-            using var childParents  = childQuery.ToComponentDataArray<Parent>(Allocator.Temp);
+        #if UNITY_EDITOR
+        private void WriteDebugData(float camX, float camZ, float lodScale)
+        {
+            var em = EntityManager;
+            loadedRootQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
+            if (loadedRootQuery.IsEmpty) { loadedRootQuery.ResetFilter(); return; }
 
-            var alphaMap = new NativeHashMap<Entity, float>(entities.Length, Allocator.Temp);
+            using var entities = loadedRootQuery.ToEntityArray(Allocator.Temp);
+            using var transforms = loadedRootQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             for (int i = 0; i < entities.Length; i++)
             {
@@ -107,111 +284,27 @@ namespace IVUnity.ECS
                 float dz = transforms[i].Position.z - camZ;
                 float dist = math.sqrt(dx * dx + dz * dz);
 
-                // Engine: adds bound radius to effective draw, not subtracts from distance.
-                // Large objects stay visible longer because their extent reaches further.
-                float radius = em.HasComponent<BoundRadius>(e) ? em.GetComponentData<BoundRadius>(e).Value : 0f;
-                float effectiveDraw = drawDists[i].Value * lodScale + radius;
-
-                // Part 1: base alpha from own distance (RAGE: CalcAlphaFade)
-                float fadeUp = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
-                float alpha = math.saturate(fadeUp * 4.0f);
-                if (alpha > 0.9f) alpha = 1.0f;
-
-                #if UNITY_EDITOR
-                FadeReason reason = alpha < 1.0f ? FadeReason.DistanceEdgeFade : FadeReason.FullyVisible;
-                #endif
-
-                // Part 2: FadeDownRelativeToChildren (RAGE: UpdateAlphaPt2)
-                // RAGE: only entities with children apply this (!IsHighDetail)
-                // HD and OrphanHD are leaves — they never fade from children.
                 bool hasChildLodDist = em.HasComponent<ChildLodDist>(e);
                 bool hasChildCount = em.HasComponent<LodChildCount>(e);
-                bool hasLodLevel = em.HasComponent<LodLevel>(e);
-                LodType lodType = hasLodLevel ? em.GetComponentData<LodLevel>(e).Value : LodType.OrphanHD;
-                bool isParentType = lodType == LodType.LOD || lodType == LodType.SLOD;
-                bool isBaseOrphanLod = lodType == LodType.OrphanHD && em.HasComponent<BaseLayerTag>(e);
 
-                if (isParentType || isBaseOrphanLod)
+                int total = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
+                float childDist = hasChildLodDist ? em.GetComponentData<ChildLodDist>(e).Value * lodScale : 0;
+
+                var dbg = new DebugFadeReason
                 {
-                    int totalChildren = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
-                    renderingChildCount.TryGetValue(e, out int attached);
-
-                    float childLodDist;
-
-                    if (totalChildren > 0 && attached >= totalChildren && hasChildLodDist)
-                    {
-                        // Within-IPL: all children rendering → fade using known childLodDist
-                        childLodDist = em.GetComponentData<ChildLodDist>(e).Value * lodScale;
-                    }
-                    else if (totalChildren == 0 && em.HasComponent<BaseLayerTag>(e))
-                    {
-                        // Childless LOD/SLOD (by name) in base layer: HD is in streaming WPLs.
-                        // No within-IPL LOD chain — fade using assumed HD coverage.
-                        childLodDist = 50f * lodScale;
-                    }
-                    else
-                    {
-                        childLodDist = -1f; // don't fade
-                    }
-
-                    if (childLodDist >= 0f)
-                    {
-                        float fadeStart = childLodDist + FadeZone;
-                        float fadeStop = childLodDist;
-
-                        if (dist <= fadeStart)
-                        {
-                            float t = math.saturate((dist - fadeStop) / (fadeStart - fadeStop));
-                            alpha = math.min(alpha, t);
-                            if (alpha < 0.02f) alpha = 0.0f;
-
-                            #if UNITY_EDITOR
-                            reason = totalChildren > 0 ? FadeReason.AllChildrenLoaded : FadeReason.BaseLayerHidden;
-                            #endif
-                        }
-                    }
-                }
-
-                // Part 3: Force parent visible if child not loaded (RAGE: PostScan Part C)
-                // If this entity has a parent AND this entity is fading/invisible AND not loaded
-                // → force parent alpha = 1. We handle this by not hiding entities that aren't loaded,
-                // which the Loaded query filter already ensures.
-
-                #if UNITY_EDITOR
-                {
-                    int dbgTotal = hasChildCount ? em.GetComponentData<LodChildCount>(e).Value : 0;
-                    renderingChildCount.TryGetValue(e, out int dbgAttached);
-                    float dbgChildDist = hasChildLodDist ? em.GetComponentData<ChildLodDist>(e).Value * lodScale : 0;
-                    var dbg = new DebugFadeReason
-                    {
-                        Value = reason,
-                        DistToCamera = dist,
-                        ChildLodDistScaled = dbgChildDist,
-                        ChildrenLoaded = dbgAttached,
-                        ChildrenTotal = dbgTotal,
-                    };
-                    if (em.HasComponent<DebugFadeReason>(e))
-                        em.SetComponentData(e, dbg);
-                    else
-                        em.AddComponentData(e, dbg);
-                }
-                #endif
-
-                alphaMap[e] = alpha;
+                    Value = FadeReason.None,
+                    DistToCamera = dist,
+                    ChildLodDistScaled = childDist,
+                    ChildrenLoaded = 0,
+                    ChildrenTotal = total,
+                };
+                if (em.HasComponent<DebugFadeReason>(e))
+                    em.SetComponentData(e, dbg);
+                else
+                    em.AddComponentData(e, dbg);
             }
-
-            // Step 3: write alpha to sub-mesh children
-            for (int i = 0; i < childEntities.Length; i++)
-            {
-                Entity parent = childParents[i].Value;
-                if (alphaMap.TryGetValue(parent, out float a))
-                {
-                    em.SetComponentData(childEntities[i], new StippleAlpha { Value = a });
-                }
-            }
-
-            alphaMap.Dispose();
-            renderingChildCount.Dispose();
+            loadedRootQuery.ResetFilter();
         }
+        #endif
     }
 }

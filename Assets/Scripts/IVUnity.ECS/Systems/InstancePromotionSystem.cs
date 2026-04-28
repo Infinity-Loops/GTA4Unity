@@ -27,6 +27,7 @@ namespace IVUnity.ECS
         private EntityArchetype childArchetype;
         private RenderFilterSettings filterSettings;
         private RenderFilterSettings filterSettingsNoShadow;
+        private EntityQuery pendingQuery;
 
         public void Configure(MeshCache cache)
         {
@@ -74,6 +75,10 @@ namespace IVUnity.ECS
                 ReceiveShadows     = true,
                 StaticShadowCaster = false,
             };
+
+            pendingQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, ModelRef, LocalTransform, StreamingState>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
@@ -83,15 +88,13 @@ namespace IVUnity.ECS
             var cfg = SystemAPI.GetSingleton<StreamingConfig>();
             int budget = cfg.MaxPromotionsPerFrame;
 
-            var query = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, ModelRef, LocalTransform, StreamingState>()
-                .Build(EntityManager);
-            query.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Pending });
+            pendingQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Pending });
 
-            if (query.IsEmpty) return;
+            if (pendingQuery.IsEmpty) { pendingQuery.ResetFilter(); return; }
 
-            using var entities = query.ToEntityArray(Allocator.Temp);
-            using var refs     = query.ToComponentDataArray<ModelRef>(Allocator.Temp);
+            using var entities = pendingQuery.ToEntityArray(Allocator.Temp);
+            using var refs     = pendingQuery.ToComponentDataArray<ModelRef>(Allocator.Temp);
+            pendingQuery.ResetFilter();
 
             for (int i = 0; i < entities.Length && budget > 0; i++)
             {

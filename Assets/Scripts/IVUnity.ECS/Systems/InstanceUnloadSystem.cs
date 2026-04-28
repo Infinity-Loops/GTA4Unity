@@ -4,43 +4,43 @@ using Unity.Transforms;
 
 namespace IVUnity.ECS
 {
-    /// <summary>
-    /// Finalizes entities leaving the stream range. Queries all Unloading roots, destroys
-    /// their sub-mesh children (matched by Parent), decrements MeshCache refcounts, and
-    /// flips the shared state back to Dormant so the root is cheap to iterate.
-    /// </summary>
     [UpdateInGroup(typeof(WorldAssetSystemGroup))]
     [UpdateAfter(typeof(InstancePromotionSystem))]
     public partial class InstanceUnloadSystem : SystemBase
     {
         private MeshCache cache;
+        private EntityQuery unloadingQuery;
+        private EntityQuery childrenQuery;
 
         public void Configure(MeshCache cache)
         {
             this.cache = cache;
         }
 
-        protected override void OnUpdate()
+        protected override void OnCreate()
         {
-            // StreamingState must be declared in WithAll for SetSharedComponentFilter to work.
-            var query = new EntityQueryBuilder(Allocator.Temp)
+            unloadingQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<WorldInstanceTag, ModelRef, StreamingState>()
                 .Build(EntityManager);
-            query.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Unloading });
 
-            if (query.IsEmpty) return;
+            childrenQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<SubMeshTag, Parent>()
+                .Build(EntityManager);
+        }
 
-            using var entities = query.ToEntityArray(Allocator.Temp);
-            using var refs     = query.ToComponentDataArray<ModelRef>(Allocator.Temp);
+        protected override void OnUpdate()
+        {
+            unloadingQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Unloading });
+
+            if (unloadingQuery.IsEmpty) { unloadingQuery.ResetFilter(); return; }
+
+            using var entities = unloadingQuery.ToEntityArray(Allocator.Temp);
+            using var refs     = unloadingQuery.ToComponentDataArray<ModelRef>(Allocator.Temp);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             if (cache != null)
             {
-                // Find all SubMeshTag children whose Parent is one of the unloading roots.
-                var childrenQuery = new EntityQueryBuilder(Allocator.Temp)
-                    .WithAll<SubMeshTag, Parent>()
-                    .Build(EntityManager);
                 using var childEntities = childrenQuery.ToEntityArray(Allocator.Temp);
                 using var childParents  = childrenQuery.ToComponentDataArray<Parent>(Allocator.Temp);
 
@@ -68,7 +68,8 @@ namespace IVUnity.ECS
             ecb.Playback(EntityManager);
             ecb.Dispose();
 
-            EntityManager.SetSharedComponent(query, new StreamingState { Value = StreamingStateValue.Dormant });
+            EntityManager.SetSharedComponent(unloadingQuery, new StreamingState { Value = StreamingStateValue.Dormant });
+            unloadingQuery.ResetFilter();
         }
     }
 }
