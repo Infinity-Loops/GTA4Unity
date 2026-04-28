@@ -47,9 +47,28 @@ Shader "GTA IV/gta_glass_emissivenight"
                 UNITY_SETUP_INSTANCE_ID(i);
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
-                half4 diffuse = half4(tex.rgb, tex.a);
-                half3 color = GTA_ApplyFog(diffuse.rgb, i.fogFactor);
-                return half4(color, diffuse.a);
+
+                float3 N = normalize(i.normalWS);
+                float3 V = GetWorldSpaceNormalizeViewDir(i.positionWS);
+                float NdotV = saturate(dot(N, V));
+                float fresnel = 0.04 + 0.96 * pow(1.0 - NdotV, 5.0);
+
+                // Emissive base — self-lit, no shadow dependency
+                half3 color = tex.rgb;
+
+                // Fresnel reflection on top of emissive
+                float3 reflDir = reflect(-V, N);
+                half3 envColor = GlossyEnvironmentReflection(reflDir, 0.0, 1.0);
+                color = lerp(color, color + envColor, fresnel * 0.3);
+
+                // Subtle gloss specular from sun
+                Light mainLight = GetMainLight();
+                float3 H = normalize(mainLight.direction + V);
+                color += pow(saturate(dot(N, H)), 512.0) * 0.8 * mainLight.color;
+
+                color = GTA_ApplyFog(color, i.fogFactor);
+                float alpha = lerp(tex.a, 1.0, fresnel * 0.5);
+                return half4(color, alpha);
             }
             ENDHLSL
         }

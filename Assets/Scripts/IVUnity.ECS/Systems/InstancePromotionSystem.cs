@@ -110,14 +110,17 @@ namespace IVUnity.ECS
 
                 if (entry.SubMeshes == null || entry.SubMeshes.Length == 0)
                 {
-                    Debug.LogWarning($"[Promotion] 0x{modelRef.ModelHash:X8} has 0 sub-meshes — invisible entity");
+                    Debug.LogWarning($"[Promotion] 0x{modelRef.ModelHash:X8} has 0 sub-meshes - invisible entity");
                 }
+
+                bool isLodOrSlod = EntityManager.HasComponent<LodLevel>(root)
+                    && EntityManager.GetComponentData<LodLevel>(root).Value is LodType.LOD or LodType.SLOD;
+                var filter = isLodOrSlod ? filterSettingsNoShadow : filterSettings;
 
                 foreach (var sub in entry.SubMeshes)
                 {
                     var child = EntityManager.CreateEntity(childArchetype);
 
-                    // Non-structural setters — fast.
                     EntityManager.SetComponentData(child, sub.LocalTransform);
                     EntityManager.SetComponentData(child, new Parent { Value = root });
                     EntityManager.SetComponentData(child, new MaterialMeshInfo(sub.MaterialId, sub.MeshId, (ushort)0));
@@ -128,11 +131,7 @@ namespace IVUnity.ECS
                         Value = math.mul(parentL2W.Value, sub.LocalTransform.ToMatrix()),
                     });
 
-                    // Shared component set moves the entity into the chunk keyed by filterSettings.
-                    // All children share the same value, so they all land in one chunk (after the
-                    // first one creates it) — subsequent moves are cheap chunk-pointer updates.
-                    bool isLod = EntityManager.HasComponent<LodTag>(root);
-                    EntityManager.SetSharedComponent(child, isLod ? filterSettingsNoShadow : filterSettings);
+                    EntityManager.SetSharedComponent(child, filter);
 
                     #if UNITY_EDITOR
                     EntityManager.AddComponentData(child, new DebugShaderName

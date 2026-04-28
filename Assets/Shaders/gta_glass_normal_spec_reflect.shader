@@ -25,6 +25,8 @@ Shader "GTA IV/gta_glass_normal_spec_reflect"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_fog
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
@@ -58,24 +60,50 @@ Shader "GTA IV/gta_glass_normal_spec_reflect"
                 GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
 
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
-                half4 diffuse = half4(tex.rgb, tex.a);
-                half4 specMap = SAMPLE_TEXTURE2D(_SpecTex, sampler_SpecTex, i.uv);
+                half specMask = SAMPLE_TEXTURE2D(_SpecTex, sampler_SpecTex, i.uv).r;
 
                 float3 N = GTA_ApplyNormalMap(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, i.uv), i.normalWS, i.positionWS, i.uv);
+                float3 V = normalize(i.viewDirWS);
+                float NdotV = saturate(dot(N, V));
+                float fresnel = 0.04 + 0.96 * pow(1.0 - NdotV, 5.0);
 
-                Light mainLight = GetMainLight();
+                float4 shadowCoord = TransformWorldToShadowCoord(i.positionWS);
+                Light mainLight = GetMainLight(shadowCoord);
+                half shadow = mainLight.shadowAttenuation;
 
-                half3 specColor = GTA_Specular(N, i.positionWS, mainLight.direction, mainLight.color, specMap.r, _Shininess, mainLight.shadowAttenuation);
+                half3 ambient = max(SampleSH(N), 0.03);
+                ambient *= lerp(0.5, 1.0, shadow);
+                half NdotL = dot(N, mainLight.direction) * 0.5 + 0.5;
+                half3 direct = mainLight.color * (NdotL * NdotL) * shadow;
+                half3 lit = tex.rgb * (ambient + direct);
 
-                float3 reflDir = reflect(-normalize(i.viewDirWS), N);
-                half3 envColor = GlossyEnvironmentReflection(reflDir, 0.3, 1.0);
+                float3 reflDir = reflect(-V, N);
+                half3 envColor = GlossyEnvironmentReflection(reflDir, 0.0, 1.0);
+                envColor *= lerp(0.6, 1.0, shadow);
 
-                half3 color = GTA_LightingWithShadow(diffuse.rgb, N, i.positionWS);
-                color += specColor;
-                color += envColor * specMap.r * 0.3;
+                half reflAmount = max(fresnel * 0.6, specMask * 0.4);
+                half3 color = lerp(lit, envColor, reflAmount);
+
+                float3 H = normalize(mainLight.direction + V);
+                float NdotH = saturate(dot(N, H));
+                color += pow(NdotH, max(_Shininess, 1.0)) * saturate(specMask) * 0.5 * mainLight.color * shadow;
+                color += pow(NdotH, 512.0) * 2.0 * mainLight.color * shadow;
+
+                #ifdef _ADDITIONAL_LIGHTS
+                    uint count = GetAdditionalLightsCount();
+                    for (uint j = 0u; j < count; j++)
+                    {
+                        Light addLight = GetAdditionalLight(j, i.positionWS);
+                        float addAtten = addLight.distanceAttenuation * addLight.shadowAttenuation;
+                        float3 addH = normalize(addLight.direction + V);
+                        color += pow(saturate(dot(N, addH)), 256.0) * 1.5 * addLight.color * addAtten;
+                        color += tex.rgb * saturate(dot(N, addLight.direction) * 0.4 + 0.6) * addLight.color * addAtten * 0.3;
+                    }
+                #endif
+
                 color = GTA_ApplyFog(color, i.fogFactor);
-
-                return half4(color, diffuse.a);
+                float alpha = lerp(tex.a, 1.0, fresnel * 0.7);
+                return half4(color, alpha);
             }
             ENDHLSL
         }

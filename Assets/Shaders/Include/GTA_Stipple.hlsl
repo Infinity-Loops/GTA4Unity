@@ -21,7 +21,7 @@ static const float BayerMatrix[16] = {
 void GTA_StippleClip(float2 screenPos, float stippleAlpha)
 {
     if (stippleAlpha >= 0.999) return;
-    if (stippleAlpha <= 0.001) { clip(-1); return; }
+    if (stippleAlpha <= 0.01) { clip(-1); return; }
     uint2 pixel = uint2(screenPos) % 4;
     float threshold = BayerMatrix[pixel.y * 4 + pixel.x];
     clip(stippleAlpha - threshold - 0.001);
