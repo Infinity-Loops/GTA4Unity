@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -7,25 +8,24 @@ namespace IVUnity.ECS.GameMode
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial class FlyingCameraMovementSystem : SystemBase
     {
+        private EntityQuery flyingQuery;
+
         protected override void OnCreate()
         {
             RequireForUpdate<FlyingCameraTag>();
             RequireForUpdate<Possessed>();
+
+            flyingQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Possessed, FlyingCameraTag, FlyingCameraInput, FlyingCameraSettings, LocalTransform>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
         {
             float dt = SystemAPI.Time.DeltaTime;
 
-            var query = new Unity.Entities.EntityQueryBuilder(Unity.Collections.Allocator.Temp)
-                .WithAll<Possessed, FlyingCameraTag, FlyingCameraInput, FlyingCameraSettings, LocalTransform>()
-                .Build(EntityManager);
-
-            if (query.IsEmpty) return;
-
-            var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            Entity e = entities[0];
-            entities.Dispose();
+            if (flyingQuery.IsEmpty) return;
+            Entity e = flyingQuery.GetSingletonEntity();
 
             var transform = EntityManager.GetComponentData<LocalTransform>(e);
             var input = EntityManager.GetComponentData<FlyingCameraInput>(e);
@@ -57,9 +57,6 @@ namespace IVUnity.ECS.GameMode
 
             EntityManager.SetComponentData(e, LocalTransform.FromPositionRotation(newPos, rot));
             EntityManager.SetComponentData(e, settings);
-
-            // Flying camera: camera = entity (1:1)
-            // A player controller would write offset/orbit here instead
             EntityManager.SetComponentData(e, new CameraTarget
             {
                 Position = newPos,

@@ -1,23 +1,3 @@
-/**********************************************************************\
-
- RageLib - Models
- Copyright (C) 2009  Arushan/Aru <oneforaru at gmail.com>
-
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
-
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-\**********************************************************************/
-
 using System;
 using System.IO;
 using RageLib.Models.Resource;
@@ -37,18 +17,20 @@ namespace RageLib.Models.Data
         public bool VertexHasColor { get; set; }
         public bool VertexHasBlendInfo { get; set; }
         public int VertexStride { get; private set; }
-        
+
         public int IndexCount { get; private set; }
         public byte[] IndexData { get; private set; }
 
         public int MaterialIndex { get; set; }
 
+        private int posOffset = -1, normalOffset = -1, uvOffset = -1, colorOffset = -1;
+
         internal Mesh(Resource.Models.Geometry info)
         {
             PrimitiveType = (PrimitiveType) info.PrimitiveType;
-            
+
             FaceCount = (int) info.FaceCount;
-            
+
             VertexCount = info.VertexCount;
             VertexStride = info.VertexStride;
             VertexData = info.VertexBuffer.RawData;
@@ -59,35 +41,36 @@ namespace RageLib.Models.Data
             VertexDeclaration = new VertexDeclaration(info.VertexBuffer.VertexDeclaration);
             foreach (var element in VertexDeclaration.Elements)
             {
-                if (element.Usage == VertexElementUsage.Normal)
+                if (element.Stream == -1) break;
+
+                switch (element.Usage)
                 {
-                    VertexHasNormal = true;
-                }
-                if (element.Usage == VertexElementUsage.TextureCoordinate)
-                {
-                    VertexHasTexture = true;
-                }
-                // Diffuse vertex color (UsageIndex 0) drives terrain layer blending
-                // (gta_terrain_va_3lyr / 4lyr read it as the per-pixel weight tuple).
-                if (element.Usage == VertexElementUsage.Color && element.UsageIndex == 0)
-                {
-                    VertexHasColor = true;
-                }
-                if (element.Usage == VertexElementUsage.BlendIndices)
-                {
-                    VertexHasBlendInfo = true;
+                    case VertexElementUsage.Position:
+                        posOffset = element.Offset;
+                        break;
+                    case VertexElementUsage.Normal:
+                        VertexHasNormal = true;
+                        normalOffset = element.Offset;
+                        break;
+                    case VertexElementUsage.TextureCoordinate when element.UsageIndex == 0:
+                        VertexHasTexture = true;
+                        uvOffset = element.Offset;
+                        break;
+                    case VertexElementUsage.Color when element.UsageIndex == 0:
+                        VertexHasColor = true;
+                        colorOffset = element.Offset;
+                        break;
+                    case VertexElementUsage.BlendIndices:
+                        VertexHasBlendInfo = true;
+                        break;
                 }
             }
         }
 
         public ushort[] DecodeIndexData()
         {
-            byte[] indexData = IndexData;
-            ushort[] indices = new ushort[IndexCount];
-            for (int i = 0; i < IndexCount; i++)
-            {
-                indices[i] = BitConverter.ToUInt16(indexData, i*2);
-            }
+            var indices = new ushort[IndexCount];
+            Buffer.BlockCopy(IndexData, 0, indices, 0, IndexCount * 2);
             return indices;
         }
 
@@ -111,17 +94,48 @@ namespace RageLib.Models.Data
 
         public CleanVertex[] DecodeUnityBurstVertexData()
         {
-            byte[] vertexData = VertexData;
-            CleanVertex[] vertices = new CleanVertex[VertexCount];
+            byte[] data = VertexData;
+            int stride = VertexStride;
+            int count = VertexCount;
+            var vertices = new CleanVertex[count];
 
-            using (MemoryStream ms = new MemoryStream(vertexData))
+            for (int i = 0; i < count; i++)
             {
-                BinaryReader br = new BinaryReader(ms);
-                for (int i = 0; i < VertexCount; i++)
+                int b = i * stride;
+                CleanVertex v = default;
+
+                if (posOffset >= 0)
                 {
-                    ms.Seek(i * VertexStride, SeekOrigin.Begin);
-                    vertices[i] = new Vertex(br, this);
+                    int off = b + posOffset;
+                    v.Position = new UnityEngine.Vector3(
+                        BitConverter.ToSingle(data, off),
+                        BitConverter.ToSingle(data, off + 4),
+                        BitConverter.ToSingle(data, off + 8));
                 }
+
+                if (normalOffset >= 0)
+                {
+                    int off = b + normalOffset;
+                    v.Normal = new UnityEngine.Vector3(
+                        BitConverter.ToSingle(data, off),
+                        BitConverter.ToSingle(data, off + 4),
+                        BitConverter.ToSingle(data, off + 8));
+                }
+
+                if (uvOffset >= 0)
+                {
+                    int off = b + uvOffset;
+                    v.TextureCoordinates = new UnityEngine.Vector2(
+                        BitConverter.ToSingle(data, off),
+                        BitConverter.ToSingle(data, off + 4));
+                }
+
+                if (colorOffset >= 0)
+                {
+                    v.DiffuseColor = BitConverter.ToUInt32(data, b + colorOffset);
+                }
+
+                vertices[i] = v;
             }
 
             return vertices;

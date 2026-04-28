@@ -21,6 +21,7 @@ namespace IVUnity.ECS
 
         private bool fired;
         private float startTime;
+        private EntityQuery loadedCountQuery;
 
         /// <summary>
         /// Called by ECSWorldBootstrap once baking is done. The system then waits for
@@ -35,8 +36,10 @@ namespace IVUnity.ECS
 
         protected override void OnCreate()
         {
-            // Dormant until Arm() is called.
             Enabled = false;
+            loadedCountQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, StreamingState>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
@@ -61,11 +64,10 @@ namespace IVUnity.ECS
 
         private int CountLoaded()
         {
-            var q = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, StreamingState>()
-                .Build(EntityManager);
-            q.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
-            return q.CalculateEntityCount();
+            loadedCountQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
+            int count = loadedCountQuery.CalculateEntityCount();
+            loadedCountQuery.ResetFilter();
+            return count;
         }
     }
 }

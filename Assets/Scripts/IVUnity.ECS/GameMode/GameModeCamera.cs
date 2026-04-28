@@ -3,12 +3,6 @@ using UnityEngine;
 
 namespace IVUnity.ECS.GameMode
 {
-    /// <summary>
-    /// Persistent game camera. Reads CameraTarget from the possessed entity.
-    /// Each controller type writes CameraTarget differently:
-    ///   - FlyingCamera: 1:1 with entity position
-    ///   - Future player: third person offset, orbit, etc.
-    /// </summary>
     [RequireComponent(typeof(Camera))]
     public class GameModeCamera : MonoBehaviour
     {
@@ -29,10 +23,7 @@ namespace IVUnity.ECS.GameMode
 
             if (cameraQuery.IsEmpty) return;
 
-            var entities = cameraQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            var target = world.EntityManager.GetComponentData<CameraTarget>(entities[0]);
-            entities.Dispose();
-
+            var target = cameraQuery.GetSingleton<CameraTarget>();
             transform.position = target.Position;
             transform.rotation = target.Rotation;
         }

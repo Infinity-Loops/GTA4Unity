@@ -91,21 +91,34 @@ namespace IVUnity.Resolver
 
         public static int CachedMaterialCount { get { lock (cacheLock) return cache.Count; } }
 
+        private static readonly Dictionary<string, Shader> shaderCache = new Dictionary<string, Shader>();
+        private static Shader fallbackShader;
+
         private static Shader ResolveShader(string rageShaderName)
         {
             if (string.IsNullOrEmpty(rageShaderName))
                 rageShaderName = "gta_default";
 
-            var shader = Shader.Find("GTA IV/" + rageShaderName);
-            if (shader != null) return shader;
+            if (shaderCache.TryGetValue(rageShaderName, out var cached))
+                return cached;
 
-            shader = Shader.Find(rageShaderName);
-            if (shader != null) return shader;
+            var shader = Shader.Find("GTA IV/" + rageShaderName);
+            if (shader == null)
+                shader = Shader.Find(rageShaderName);
+
+            if (shader != null)
+            {
+                shaderCache[rageShaderName] = shader;
+                return shader;
+            }
 
             if (loggedMissing.Add(rageShaderName))
                 Debug.LogWarning($"[MaterialResolver] Missing shader: '{rageShaderName}' — falling back to gta_default");
 
-            return Shader.Find("GTA IV/gta_default");
+            if (fallbackShader == null)
+                fallbackShader = Shader.Find("GTA IV/gta_default");
+            shaderCache[rageShaderName] = fallbackShader;
+            return fallbackShader;
         }
 
         private readonly struct MaterialKey : IEquatable<MaterialKey>

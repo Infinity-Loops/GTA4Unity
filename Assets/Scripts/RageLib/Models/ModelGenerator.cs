@@ -170,9 +170,8 @@ namespace RageLib.Models
                     for (int meshIdx = 0; meshIdx < geometry.Meshes.Count; meshIdx++)
                     {
                         var mesh = geometry.Meshes[meshIdx];
-                        int vertCount = mesh.DecodeUnityBurstVertexData().Length;
-
-                        var vertexData = new NativeArray<CleanVertex>(mesh.DecodeUnityBurstVertexData(), Allocator.TempJob);
+                        var decoded = mesh.DecodeUnityBurstVertexData();
+                        var vertexData = new NativeArray<CleanVertex>(decoded, Allocator.TempJob);
 
                         var decodeJob = new MeshDecodeJob
                         {

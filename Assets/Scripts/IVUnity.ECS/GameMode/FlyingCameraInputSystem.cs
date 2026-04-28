@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -8,11 +9,16 @@ namespace IVUnity.ECS.GameMode
     public partial class FlyingCameraInputSystem : SystemBase
     {
         private bool captured;
+        private EntityQuery flyingQuery;
 
         protected override void OnCreate()
         {
             RequireForUpdate<FlyingCameraTag>();
             RequireForUpdate<Possessed>();
+
+            flyingQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Possessed, FlyingCameraTag, FlyingCameraInput, FlyingCameraSettings>()
+                .Build(EntityManager);
         }
 
         protected override void OnUpdate()
@@ -31,18 +37,10 @@ namespace IVUnity.ECS.GameMode
                 Cursor.visible = false;
             }
 
+            if (flyingQuery.IsEmpty) return;
+            Entity e = flyingQuery.GetSingletonEntity();
+
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-
-            var query = new Unity.Entities.EntityQueryBuilder(Unity.Collections.Allocator.Temp)
-                .WithAll<Possessed, FlyingCameraTag, FlyingCameraInput, FlyingCameraSettings>()
-                .Build(EntityManager);
-
-            if (query.IsEmpty) return;
-
-            var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            Entity e = entities[0];
-            entities.Dispose();
-
             var settings = EntityManager.GetComponentData<FlyingCameraSettings>(e);
 
             if (Mathf.Abs(scroll) > 0.001f)
