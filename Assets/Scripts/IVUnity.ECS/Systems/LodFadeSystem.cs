@@ -15,6 +15,9 @@ namespace IVUnity.ECS
         private EntityQuery loadedRootQuery;
         private EntityQuery subMeshQuery;
 
+        private NativeParallelHashMap<Entity, int> renderingChildCount;
+        private NativeParallelHashMap<Entity, float> fadingMap;
+
         protected override void OnCreate()
         {
             RequireForUpdate<FocusPointData>();
@@ -32,6 +35,15 @@ namespace IVUnity.ECS
                 .WithAll<SubMeshTag, Parent>()
                 .WithAllRW<StippleAlpha>()
                 .Build(EntityManager);
+
+            renderingChildCount = new NativeParallelHashMap<Entity, int>(1024, Allocator.Persistent);
+            fadingMap = new NativeParallelHashMap<Entity, float>(1024, Allocator.Persistent);
+        }
+
+        protected override void OnDestroy()
+        {
+            if (renderingChildCount.IsCreated) renderingChildCount.Dispose();
+            if (fadingMap.IsCreated) fadingMap.Dispose();
         }
 
         protected override void OnUpdate()
@@ -44,11 +56,15 @@ namespace IVUnity.ECS
 
             var loadedFilter = new StreamingState { Value = StreamingStateValue.Loaded };
 
+            renderingChildCount.Clear();
+            fadingMap.Clear();
+
             // Step 1: count HD children within draw distance per LOD parent
             hdChildQuery.SetSharedComponentFilter(loadedFilter);
             int hdCount = hdChildQuery.CalculateEntityCount();
-            var renderingChildCount = new NativeParallelHashMap<Entity, int>(
-                math.max(hdCount / 4, 64), Allocator.TempJob);
+
+            if (renderingChildCount.Capacity < math.max(hdCount / 4, 64))
+                renderingChildCount.Capacity = math.max(hdCount / 4, 64);
 
             var dep = Dependency;
 
@@ -73,12 +89,12 @@ namespace IVUnity.ECS
             if (rootCount == 0)
             {
                 dep.Complete();
-                renderingChildCount.Dispose();
                 loadedRootQuery.ResetFilter();
                 return;
             }
 
-            var fadingMap = new NativeParallelHashMap<Entity, float>(rootCount, Allocator.TempJob);
+            if (fadingMap.Capacity < rootCount)
+                fadingMap.Capacity = rootCount;
 
             dep = new ComputeAlphaJob
             {
@@ -101,8 +117,6 @@ namespace IVUnity.ECS
             loadedRootQuery.ResetFilter();
 
             // Step 3: write alpha to sub-mesh children
-            // Only fading entities are in the map. Children whose parent is NOT
-            // in the map get alpha=1.0 (skip write if already 1.0 → no dirty chunk).
             if (!subMeshQuery.IsEmpty)
             {
                 dep = new WriteAlphaJob
@@ -114,8 +128,6 @@ namespace IVUnity.ECS
             }
 
             dep.Complete();
-            fadingMap.Dispose();
-            renderingChildCount.Dispose();
 
             #if UNITY_EDITOR
             WriteDebugData(camX, camZ, lodScale);
