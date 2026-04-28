@@ -35,9 +35,9 @@ namespace IVUnity.ECS
         public void Enqueue(uint hash, ModelCatalog.Entry entry)
         {
             var token = cts.Token;
-            _ = Task.Run(async () =>
+            _ = Task.Run(() =>
             {
-                try { await semaphore.WaitAsync(token); }
+                try { semaphore.Wait(token); }
                 catch (OperationCanceledException) { return; }
 
                 try

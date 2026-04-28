@@ -59,20 +59,25 @@ namespace IVUnity.Resolver
         /// </summary>
         public TextureFile[] ToChainArray()
         {
-            var list = new List<TextureFile>(2);
+            int count = 0;
             for (var s = this; s != null; s = s.Parent)
-            {
-                if (s.Dictionary != null) list.Add(s.Dictionary);
-            }
-            return list.Count == 0 ? null : list.ToArray();
+                if (s.Dictionary != null) count++;
+            if (count == 0) return null;
+            var arr = new TextureFile[count];
+            int i = 0;
+            for (var s = this; s != null; s = s.Parent)
+                if (s.Dictionary != null) arr[i++] = s.Dictionary;
+            return arr;
         }
 
-        /// <summary>Returns every slot in the chain (self → parent → …) for store ref counting.</summary>
         public TxdSlot[] ChainSlots()
         {
-            var list = new List<TxdSlot>(2);
-            for (var s = this; s != null; s = s.Parent) list.Add(s);
-            return list.ToArray();
+            int count = 0;
+            for (var s = this; s != null; s = s.Parent) count++;
+            var arr = new TxdSlot[count];
+            int i = 0;
+            for (var s = this; s != null; s = s.Parent) arr[i++] = s;
+            return arr;
         }
     }
 

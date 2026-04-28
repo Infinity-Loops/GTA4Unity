@@ -134,13 +134,11 @@ namespace RageLib.Textures
                 }
             }
 
-            // Fallback: linear string comparison (original behavior)
-            string lower = name.ToLower();
             foreach (var texture in this)
             {
-                if (texture.Name.ToLower() == lower)
+                if (string.Equals(texture.Name, name, System.StringComparison.OrdinalIgnoreCase))
                     return texture;
-                if (texture.TitleName.ToLower() == lower)
+                if (string.Equals(texture.TitleName, name, System.StringComparison.OrdinalIgnoreCase))
                     return texture;
             }
             return null;

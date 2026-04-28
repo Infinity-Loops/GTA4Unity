@@ -16,6 +16,8 @@ namespace IVUnity.ECS
 
         private EntityQuery dormantQuery;
         private EntityQuery loadedQuery;
+        private EntityQuery diagCountQuery;
+        private EntityQuery diagLodQuery;
 
         private float3 lastDormantPos;
         private int frameCounter;
@@ -42,6 +44,14 @@ namespace IVUnity.ECS
                 .Build(EntityManager);
 
             lastDormantPos = new float3(float.MaxValue);
+
+            diagCountQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, StreamingState>()
+                .Build(EntityManager);
+
+            diagLodQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<WorldInstanceTag, LodTag, StreamingState>()
+                .Build(EntityManager);
         }
 
         private float nextDiagTime;
@@ -227,34 +237,27 @@ namespace IVUnity.ECS
 
         private void LogDiagnostics()
         {
-            var em = EntityManager;
             int dormant = 0, pending = 0, loaded = 0, unloading = 0;
 
-            var countQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, StreamingState>()
-                .Build(em);
+            diagCountQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Dormant });
+            dormant = diagCountQuery.CalculateEntityCount();
+            diagCountQuery.ResetFilter();
 
-            foreach (var sv in new[] {
-                StreamingStateValue.Dormant, StreamingStateValue.Pending,
-                StreamingStateValue.Loaded, StreamingStateValue.Unloading })
-            {
-                countQuery.SetSharedComponentFilter(new StreamingState { Value = sv });
-                int c = countQuery.CalculateEntityCount();
-                switch (sv)
-                {
-                    case StreamingStateValue.Dormant:   dormant   = c; break;
-                    case StreamingStateValue.Pending:    pending   = c; break;
-                    case StreamingStateValue.Loaded:     loaded    = c; break;
-                    case StreamingStateValue.Unloading:  unloading = c; break;
-                }
-                countQuery.ResetFilter();
-            }
+            diagCountQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Pending });
+            pending = diagCountQuery.CalculateEntityCount();
+            diagCountQuery.ResetFilter();
 
-            var loadedLodQ = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<WorldInstanceTag, LodTag, StreamingState>()
-                .Build(em);
-            loadedLodQ.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
-            int loadedLod = loadedLodQ.CalculateEntityCount();
+            diagCountQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
+            loaded = diagCountQuery.CalculateEntityCount();
+            diagCountQuery.ResetFilter();
+
+            diagCountQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Unloading });
+            unloading = diagCountQuery.CalculateEntityCount();
+            diagCountQuery.ResetFilter();
+
+            diagLodQuery.SetSharedComponentFilter(new StreamingState { Value = StreamingStateValue.Loaded });
+            int loadedLod = diagLodQuery.CalculateEntityCount();
+            diagLodQuery.ResetFilter();
 
             UnityEngine.Debug.Log(
                 $"[Streaming] Dormant={dormant} Pending={pending} " +

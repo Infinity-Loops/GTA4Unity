@@ -179,29 +179,97 @@ GTA_Varyings_Shadow GTA_VertexShadow(GTA_Attributes v, float3 lightDir)
 }
 
 // ---------------------------------------------------------------------------
-// Lighting — matches GTA IV's simple directional + ambient model.
+// Lighting — forward pass targeting deferred-quality results.
 //
-// Engine uses gLightAmbient0/1 (sky/ground) + single directional with shadow.
-// We use Unity's SH probe clamped to a sane range + half-lambert wrap to
-// soften the falloff (GTA IV models aren't designed for hard Lambert).
+// Squared half-lambert diffuse (energy-conserving wrap, Valve HL2 technique),
+// SH ambient with SSAO, Fresnel ambient rim for silhouette environment pickup,
+// micro-shadow at the terminator, and per-pixel additional lights.
+//
+// Gate keywords in each shader's #pragma block to activate features:
+//   _ADDITIONAL_LIGHTS              — per-pixel point/spot lights
+//   _ADDITIONAL_LIGHT_SHADOWS       — shadows from additional lights
+//   _SCREEN_SPACE_OCCLUSION         — SSAO integration
 // ---------------------------------------------------------------------------
 half3 GTA_Lighting(half3 albedo, float3 normalWS, float3 positionWS)
 {
     Light mainLight = GetMainLight();
-    half NdotL = dot(normalWS, mainLight.direction) * 0.5 + 0.5;
+    half NdotL = dot(normalWS, mainLight.direction);
+    half wrapped = NdotL * 0.5 + 0.5;
+
     half3 ambient = max(SampleSH(normalWS), 0.03);
-    return max(albedo * (ambient + mainLight.color * NdotL), 0.0);
+
+    half3 direct = mainLight.color * (wrapped * wrapped);
+
+    float3 viewDir = GetWorldSpaceNormalizeViewDir(positionWS);
+    half NdotV = saturate(dot(normalWS, viewDir));
+    half fresnel = pow(1.0 - NdotV, 4.0) * 0.15;
+
+    half3 lighting = ambient + direct + ambient * fresnel;
+
+    #ifdef _ADDITIONAL_LIGHTS
+        uint count = GetAdditionalLightsCount();
+        for (uint j = 0u; j < count; j++)
+        {
+            Light addLight = GetAdditionalLight(j, positionWS);
+            half addNdotL = saturate(dot(normalWS, addLight.direction));
+            half addWrap = addNdotL * 0.5 + 0.5;
+            lighting += addLight.color * (addWrap * addNdotL)
+                      * addLight.distanceAttenuation
+                      * addLight.shadowAttenuation;
+        }
+    #endif
+
+    return clamp(albedo * lighting, 0.0, 16.0);
 }
 
 half3 GTA_LightingWithShadow(half3 albedo, float3 normalWS, float3 positionWS)
 {
     float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
     Light mainLight = GetMainLight(shadowCoord);
-    half NdotL = dot(normalWS, mainLight.direction) * 0.5 + 0.5;
+
+    half NdotL = dot(normalWS, mainLight.direction);
+    half wrapped = NdotL * 0.5 + 0.5;
     half shadow = mainLight.shadowAttenuation;
+
+    shadow *= saturate(NdotL * 4.0 + 0.5);
+
     half3 ambient = max(SampleSH(normalWS), 0.03);
-    half3 lighting = min(ambient + mainLight.color * NdotL * shadow, 1.0);
-    return max(albedo * lighting, 0.0);
+    ambient *= lerp(0.4, 1.0, shadow);
+
+    #if defined(_SCREEN_SPACE_OCCLUSION)
+        float4 clipPos = TransformWorldToHClip(positionWS);
+        float2 screenUV = clipPos.xy / clipPos.w * 0.5 + 0.5;
+        #if UNITY_UV_STARTS_AT_TOP
+            screenUV.y = 1.0 - screenUV.y;
+        #endif
+        AmbientOcclusionFactor aoFactor = GetScreenSpaceAmbientOcclusion(screenUV);
+        ambient *= aoFactor.indirectAmbientOcclusion;
+        shadow = min(shadow, aoFactor.directAmbientOcclusion);
+    #endif
+
+    half3 direct = mainLight.color * (wrapped * wrapped) * shadow;
+
+    float3 viewDir = GetWorldSpaceNormalizeViewDir(positionWS);
+    half NdotV = saturate(dot(normalWS, viewDir));
+    half fresnel = pow(1.0 - NdotV, 4.0) * 0.15;
+    half3 rim = ambient * fresnel;
+
+    half3 lighting = ambient + direct + rim;
+
+    #ifdef _ADDITIONAL_LIGHTS
+        uint count = GetAdditionalLightsCount();
+        for (uint j = 0u; j < count; j++)
+        {
+            Light addLight = GetAdditionalLight(j, positionWS);
+            half addNdotL = saturate(dot(normalWS, addLight.direction));
+            half addWrap = addNdotL * 0.5 + 0.5;
+            lighting += addLight.color * (addWrap * addNdotL)
+                      * addLight.distanceAttenuation
+                      * addLight.shadowAttenuation;
+        }
+    #endif
+
+    return clamp(albedo * lighting, 0.0, 16.0);
 }
 
 // ---------------------------------------------------------------------------

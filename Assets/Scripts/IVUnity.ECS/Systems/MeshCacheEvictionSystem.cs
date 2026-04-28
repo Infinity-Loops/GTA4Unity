@@ -39,6 +39,8 @@ namespace IVUnity.ECS
         private MeshCache cache;
         private EntitiesGraphicsSystem graphics;
         private float lastTick;
+        private readonly List<uint> toRemove = new List<uint>();
+        private readonly List<uint> toReset  = new List<uint>();
 
         public void Configure(MeshCache cache) { this.cache = cache; }
 
@@ -56,8 +58,8 @@ namespace IVUnity.ECS
                 if (graphics == null) return;
             }
 
-            var toRemove = new List<uint>();
-            var toReset  = new List<uint>(); // keep entry, FailureCount preserved
+            toRemove.Clear();
+            toReset.Clear();
             int loadedEvictions = 0, failedRetries = 0, loadingResets = 0, failedGiveUp = 0;
 
             foreach (var kv in cache.All)

@@ -48,7 +48,7 @@ namespace IVUnity.ECS
             hdChildQuery.SetSharedComponentFilter(loadedFilter);
             int hdCount = hdChildQuery.CalculateEntityCount();
             var renderingChildCount = new NativeParallelHashMap<Entity, int>(
-                math.max(hdCount, 64), Allocator.TempJob);
+                math.max(hdCount / 4, 64), Allocator.TempJob);
 
             var dep = Dependency;
 
@@ -67,7 +67,7 @@ namespace IVUnity.ECS
             }
             hdChildQuery.ResetFilter();
 
-            // Step 2: compute alpha per loaded root entity
+            // Step 2: compute alpha — ONLY entities with alpha != 1.0 go into the map
             loadedRootQuery.SetSharedComponentFilter(loadedFilter);
             int rootCount = loadedRootQuery.CalculateEntityCount();
             if (rootCount == 0)
@@ -78,7 +78,9 @@ namespace IVUnity.ECS
                 return;
             }
 
-            var alphaMap = new NativeParallelHashMap<Entity, float>(rootCount, Allocator.TempJob);
+            // Small capacity: only fading entities enter the map (near draw distance edges)
+            var fadingMap = new NativeParallelHashMap<Entity, float>(
+                math.max(rootCount / 8, 64), Allocator.TempJob);
 
             dep = new ComputeAlphaJob
             {
@@ -95,24 +97,26 @@ namespace IVUnity.ECS
                 LodChildCountHandle = GetComponentTypeHandle<LodChildCount>(true),
                 BaseLayerHandle = GetComponentTypeHandle<BaseLayerTag>(true),
                 RenderingChildCount = renderingChildCount,
-                AlphaMap = alphaMap.AsParallelWriter(),
+                FadingMap = fadingMap.AsParallelWriter(),
             }.Schedule(loadedRootQuery, dep);
 
             loadedRootQuery.ResetFilter();
 
-            // Step 3: write alpha to sub-mesh children — chained, single Complete()
+            // Step 3: write alpha to sub-mesh children
+            // Only fading entities are in the map. Children whose parent is NOT
+            // in the map get alpha=1.0 (skip write if already 1.0 → no dirty chunk).
             if (!subMeshQuery.IsEmpty)
             {
                 dep = new WriteAlphaJob
                 {
                     ParentHandle = GetComponentTypeHandle<Parent>(true),
                     AlphaHandle = GetComponentTypeHandle<StippleAlpha>(false),
-                    AlphaMap = alphaMap,
+                    FadingMap = fadingMap,
                 }.ScheduleParallel(subMeshQuery, dep);
             }
 
             dep.Complete();
-            alphaMap.Dispose();
+            fadingMap.Dispose();
             renderingChildCount.Dispose();
 
             #if UNITY_EDITOR
@@ -120,7 +124,6 @@ namespace IVUnity.ECS
             #endif
         }
 
-        // Step 1: single-threaded Burst — multiple children can map to same parent
         [BurstCompile]
         struct CountChildrenJob : IJobChunk
         {
@@ -157,7 +160,6 @@ namespace IVUnity.ECS
             }
         }
 
-        // Step 2: single-threaded Burst — reads shared map, writes unique keys
         [BurstCompile]
         struct ComputeAlphaJob : IJobChunk
         {
@@ -173,7 +175,7 @@ namespace IVUnity.ECS
             [ReadOnly] public ComponentTypeHandle<BaseLayerTag> BaseLayerHandle;
 
             [ReadOnly] public NativeParallelHashMap<Entity, int> RenderingChildCount;
-            public NativeParallelHashMap<Entity, float>.ParallelWriter AlphaMap;
+            public NativeParallelHashMap<Entity, float>.ParallelWriter FadingMap;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex,
                 bool useEnabledMask, in Unity.Burst.Intrinsics.v128 chunkEnabledMask)
@@ -198,22 +200,36 @@ namespace IVUnity.ECS
 
                 for (int i = 0; i < chunk.Count; i++)
                 {
-                    float dx = transforms[i].Position.x - CamX;
-                    float dz = transforms[i].Position.z - CamZ;
-                    float dist = math.sqrt(dx * dx + dz * dz);
+                    float ddx = transforms[i].Position.x - CamX;
+                    float ddz = transforms[i].Position.z - CamZ;
+                    float distSq = ddx * ddx + ddz * ddz;
 
                     float radius = hasBounds ? bounds[i].Value : 0f;
                     float effectiveDraw = drawDists[i].Value * LodScale + radius;
 
-                    float fadeUp = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
-                    float alpha = math.saturate(fadeUp * 4.0f);
-                    if (alpha > 0.9f) alpha = 1.0f;
+                    // Fast path: entity well inside draw distance → alpha is 1.0
+                    // Only entities within FadeZone of the edge can have alpha < 1.0
+                    float safeRange = effectiveDraw - FadeZone;
+                    bool needsDistanceFade = safeRange <= 0f || distSq >= safeRange * safeRange;
 
                     LodType lodType = hasLodLevel ? lodLevels[i].Value : LodType.OrphanHD;
                     bool isParentType = lodType == LodType.LOD || lodType == LodType.SLOD;
                     bool isBaseOrphanLod = lodType == LodType.OrphanHD && hasBaseLayer;
+                    bool needsChildFade = isParentType || isBaseOrphanLod;
 
-                    if (isParentType || isBaseOrphanLod)
+                    // Skip sqrt and fade math for the vast majority of entities
+                    if (!needsDistanceFade && !needsChildFade)
+                        continue; // alpha=1.0, not added to map
+
+                    float dist = math.sqrt(distSq);
+
+                    // Part 1: distance edge fade
+                    float fadeUp = math.saturate((FadeZone + effectiveDraw - dist) / FadeZone);
+                    float alpha = math.saturate(fadeUp * 4.0f);
+                    if (alpha > 0.9f) alpha = 1.0f;
+
+                    // Part 2: fade down relative to children
+                    if (needsChildFade)
                     {
                         Entity e = entities[i];
                         int totalChildren = hasChildCount ? childCounts[i].Value : 0;
@@ -240,18 +256,19 @@ namespace IVUnity.ECS
                         }
                     }
 
-                    AlphaMap.TryAdd(entities[i], alpha);
+                    // Only add if NOT fully opaque — keeps the map tiny
+                    if (alpha < 1.0f)
+                        FadingMap.TryAdd(entities[i], alpha);
                 }
             }
         }
 
-        // Step 3: parallel Burst — each child writes its own StippleAlpha
         [BurstCompile]
         struct WriteAlphaJob : IJobChunk
         {
             [ReadOnly] public ComponentTypeHandle<Parent> ParentHandle;
             public ComponentTypeHandle<StippleAlpha> AlphaHandle;
-            [ReadOnly] public NativeParallelHashMap<Entity, float> AlphaMap;
+            [ReadOnly] public NativeParallelHashMap<Entity, float> FadingMap;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex,
                 bool useEnabledMask, in Unity.Burst.Intrinsics.v128 chunkEnabledMask)
@@ -261,8 +278,18 @@ namespace IVUnity.ECS
 
                 for (int i = 0; i < chunk.Count; i++)
                 {
-                    if (AlphaMap.TryGetValue(parents[i].Value, out float a))
-                        alphas[i] = new StippleAlpha { Value = a };
+                    if (FadingMap.TryGetValue(parents[i].Value, out float a))
+                    {
+                        // Parent is fading — write the fade value
+                        if (alphas[i].Value != a)
+                            alphas[i] = new StippleAlpha { Value = a };
+                    }
+                    else
+                    {
+                        // Parent not fading — should be fully visible
+                        if (alphas[i].Value != 1.0f)
+                            alphas[i] = new StippleAlpha { Value = 1.0f };
+                    }
                 }
             }
         }

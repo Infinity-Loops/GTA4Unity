@@ -48,14 +48,14 @@ namespace IVUnity.Resolver
         public TxdSlot Acquire(string txdName)
         {
             if (string.IsNullOrEmpty(txdName)) return null;
-            string key = txdName.ToLowerInvariant();
 
             lock (loadLock)
             {
-                if (!slots.TryGetValue(key, out var slot))
+                if (!slots.TryGetValue(txdName, out var slot))
                 {
-                    slot = new TxdSlot(key);
-                    slots[key] = slot;
+                    string lower = txdName.ToLowerInvariant();
+                    slot = new TxdSlot(lower);
+                    slots[lower] = slot;
                 }
 
                 EnsureLoaded(slot);
@@ -191,8 +191,9 @@ namespace IVUnity.Resolver
             {
                 if (!slots.TryGetValue(parentName, out var parentSlot))
                 {
-                    parentSlot = new TxdSlot(parentName.ToLowerInvariant());
-                    slots[parentSlot.Name] = parentSlot;
+                    string lower = parentName.ToLowerInvariant();
+                    parentSlot = new TxdSlot(lower);
+                    slots[lower] = parentSlot;
                 }
                 EnsureLoaded(parentSlot);
                 if (parentSlot.State == TxdLoadState.Loaded)
