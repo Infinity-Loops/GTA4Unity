@@ -354,10 +354,14 @@ namespace RageLib.Models
             {
                 for (int i = 0; i < Vertices.Length; i++)
                 {
-                    Positions[i] = Vertices[i].Position;
+                    var p = Vertices[i].Position;
+                    Positions[i] = new Vector3(-p.x, p.z, -p.y);
 
                     if (HasNormals)
-                        Normals[i] = Vertices[i].Normal;
+                    {
+                        var n = Vertices[i].Normal;
+                        Normals[i] = new Vector3(-n.x, n.z, -n.y);
+                    }
                     if (HasTextureCoordinates)
                         TextureCoordinates[i] = Vertices[i].TextureCoordinates;
                     if (HasColors)
@@ -385,8 +389,8 @@ namespace RageLib.Models
                 for (int i = 0; i < FaceCount; i++)
                 {
                     TriangleIndices.Add(Indices[i * 3 + 0]);
-                    TriangleIndices.Add(Indices[i * 3 + 1]);
                     TriangleIndices.Add(Indices[i * 3 + 2]);
+                    TriangleIndices.Add(Indices[i * 3 + 1]);
                 }
             }
         }

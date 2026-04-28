@@ -306,60 +306,22 @@ namespace IVUnity.ECS
                     {
                         int mloCreated = 0, mloSkipped = 0;
 
-                        // Position: compose in RAGE space with raw quaternion (works for vector rotation),
-                        // then let Ipl_INST.unityPosition handle RAGE→Unity via VirtualParentMatrix.
-                        Quaternion bRotRaw = new Quaternion(
-                            inst.rotation.x, inst.rotation.y, inst.rotation.z, inst.rotation.w);
-
-                        // Rotation: building's unityRotation = ParentRot * mirrorAdjust(buildingStored).
-                        // The prop's relative rotation in Unity = mirrorAdjust(propStored) = (x, -y, -z, -w).
-                        // Composed: buildingUnityRot * mirrorAdjust(propStored).
-                        Quaternion bUnityRot = inst.unityRotation;
-
                         foreach (var prop in mloDef.Entities)
                         {
                             string propName = prop.ModelName;
                             uint propHash = ModelCatalog.Hash(propName);
                             if (!catalog.TryGet(propHash, out _)) { mloSkipped++; continue; }
 
-                            // Position via fakeInst (RAGE composition → Ipl_INST conversion)
-                            Vector3 worldPos = inst.position + bRotRaw * prop.Position;
-                            var propInst = new Ipl_INST { position = worldPos };
-                            Vector3 propUPos = propInst.unityPosition;
+                            RageCoordinates.Compose(
+                                inst.position, inst.rotation,
+                                prop.Position, prop.Rotation,
+                                out Vector3 propUPos, out Quaternion propURot);
 
-                            // Rotation: mirrorAdjust the prop's stored rotation (same as Ipl_INST line 58)
-                            // then compose with building's already-converted Unity rotation.
-                            Quaternion propRelMirror = new Quaternion(
-                                prop.Rotation.x, -prop.Rotation.y, -prop.Rotation.z, -prop.Rotation.w);
-                            Quaternion propURot = bUnityRot * propRelMirror;
-
-                            // Scale from the position conversion (handles VPM mirror)
-                            Vector3 propUScale = propInst.unityScale;
-                            bool mloUniform = Mathf.Abs(propUScale.x - propUScale.y) < 1e-3f
-                                           && Mathf.Abs(propUScale.x - propUScale.z) < 1e-3f;
-
-                            Entity propEntity;
-                            if (mloUniform)
-                            {
-                                float s = propUScale.x != 0f ? propUScale.x : 1f;
-                                propEntity = em.CreateEntity(archetypeUniform);
-                                em.SetComponentData(propEntity, LocalTransform.FromPositionRotationScale(
-                                    new float3(propUPos.x, propUPos.y, propUPos.z),
-                                    new quaternion(propURot.x, propURot.y, propURot.z, propURot.w),
-                                    s));
-                            }
-                            else
-                            {
-                                propEntity = em.CreateEntity(archetypeNonUniform);
-                                em.SetComponentData(propEntity, LocalTransform.FromPositionRotationScale(
-                                    new float3(propUPos.x, propUPos.y, propUPos.z),
-                                    new quaternion(propURot.x, propURot.y, propURot.z, propURot.w),
-                                    1f));
-                                em.SetComponentData(propEntity, new PostTransformMatrix
-                                {
-                                    Value = float4x4.Scale(propUScale.x, propUScale.y, propUScale.z),
-                                });
-                            }
+                            var propEntity = em.CreateEntity(archetypeUniform);
+                            em.SetComponentData(propEntity, LocalTransform.FromPositionRotationScale(
+                                new float3(propUPos.x, propUPos.y, propUPos.z),
+                                new quaternion(propURot.x, propURot.y, propURot.z, propURot.w),
+                                1f));
                             em.SetComponentData(propEntity, new ModelRef { ModelHash = propHash });
                             em.SetComponentData(propEntity, new DrawDist { Value = mloDef.drawDistance });
                             em.AddComponentData(propEntity, new BoundRadius { Value = 0f });
@@ -404,32 +366,23 @@ namespace IVUnity.ECS
                         instanceName;
                     if (!dedupSet.Add(dedupKey)) { skippedDuplicate++; continue; }
 
-                    // unityPosition / unityRotation / unityScale — same three inputs
-                    // HighPerformanceLoader writes to go.transform.{position,rotation,localScale}.
-                    // unityPosition / unityRotation already bake in the VirtualParentMatrix
-                    // (−90°X + (−1,1,1) mirror); do NOT re-apply any coord fix here.
-                    Vector3 uPos   = inst.unityPosition;
-                    Quaternion uRot = inst.unityRotation;
-                    Vector3 uScale = inst.unityScale;
+                    Vector3 uPos = RageCoordinates.Position(inst.position);
+                    Quaternion uRot = RageCoordinates.Rotation(inst.rotation);
 
-                    // ECS LocalTransform.Scale is scalar. Uniform scale fits; non-uniform needs
-                    // PostTransformMatrix so the final LocalToWorld matches T * R * S3d — the
-                    // composition go.transform.{position,rotation,localScale} produces.
-                    // Use 1e-3 epsilon so floating-point drift from the TRS/multiply in
-                    // Ipl_INST.unityScale doesn't wrongly classify default instances as non-uniform.
-                    const float uniformEps = 1e-3f;
-                    bool isUniform = Mathf.Abs(uScale.x - uScale.y) < uniformEps
-                                  && Mathf.Abs(uScale.x - uScale.z) < uniformEps;
+                    // RAGE scale: (0,0,0) = default (1,1,1). scaleXY applies to X+Y, scaleZ to Z.
+                    Vector3 rageScale = inst.scale;
+                    float scaleXY = (rageScale.x == 0 && rageScale.y == 0 && rageScale.z == 0) ? 1f : rageScale.x;
+                    float scaleZ  = (rageScale.x == 0 && rageScale.y == 0 && rageScale.z == 0) ? 1f : rageScale.z;
+                    bool isUniform = Mathf.Abs(scaleXY - scaleZ) < 1e-3f;
 
                     Entity entity;
                     if (isUniform)
                     {
-                        float s = uScale.x != 0f ? uScale.x : 1f;
                         entity = em.CreateEntity(archetypeUniform);
                         em.SetComponentData(entity, LocalTransform.FromPositionRotationScale(
                             new float3(uPos.x, uPos.y, uPos.z),
                             new quaternion(uRot.x, uRot.y, uRot.z, uRot.w),
-                            s));
+                            scaleXY));
                     }
                     else
                     {
@@ -440,7 +393,7 @@ namespace IVUnity.ECS
                             1f));
                         em.SetComponentData(entity, new PostTransformMatrix
                         {
-                            Value = float4x4.Scale(uScale.x, uScale.y, uScale.z),
+                            Value = float4x4.Scale(scaleXY, scaleZ, scaleXY),
                         });
                     }
                     em.SetComponentData(entity, new ModelRef { ModelHash = hash });

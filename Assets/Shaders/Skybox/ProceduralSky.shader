@@ -2,15 +2,13 @@ Shader "Skybox/ProceduralSky"
 {
     Properties
     {
-        [Header(Sky)]
-        _ZenithColor       ("Zenith Color",        Color)              = (0.25, 0.5, 0.95, 1)
-        _HorizonColor      ("Horizon Color",       Color)              = (0.65, 0.82, 1.0, 1)
-        _GroundColor        ("Ground Color",        Color)              = (0.37, 0.35, 0.34, 1)
-        _NightAmbient       ("Night Ambient Color", Color)              = (0.02, 0.02, 0.08, 1)
+        [Header(Atmosphere)]
+        _SunIntensity      ("Sun Intensity",        Range(1, 40))       = 20
+        _AtmoDensity       ("Atmosphere Density",   Range(0.5, 3.0))    = 1.0
+        _MieStrength       ("Mie (Haze)",           Range(0.001, 0.05)) = 0.021
+        _MieAnisotropy     ("Mie Anisotropy",       Range(0.0, 0.99))   = 0.76
+        _OzoneStrength     ("Ozone Strength",       Range(0.0, 2.0))    = 1.0
 
-        [Header(Sunset)]
-        _SunsetColor        ("Sunset Color",        Color)              = (1.0, 0.45, 0.15, 1)
-        _SunsetSpread       ("Sunset Spread",       Range(0.5, 4.0))    = 1.5
 
         [Header(Sun)]
         _SunDiscSize        ("Sun Disc Size",       Range(0.99, 0.9999))= 0.997
@@ -91,8 +89,8 @@ Shader "Skybox/ProceduralSky"
                 float sunAltitude = sunDir.y;
 
                 AtmosphereResult atmo = ComputeFullAtmosphere(viewDir, sunDir,
-                    _ZenithColor.rgb, _HorizonColor.rgb, _GroundColor.rgb,
-                    _NightAmbient.rgb, _SunsetColor.rgb, _SunsetSpread);
+                    _SunIntensity, _AtmoDensity, _MieStrength,
+                    _MieAnisotropy, _OzoneStrength);
 
                 float3 skyColor = atmo.color;
 
@@ -130,8 +128,10 @@ Shader "Skybox/ProceduralSky"
                     skyColor += sunDisc * skyFade;
                 }
 
-                // Tonemap.
-                skyColor = 1.0 - exp(-skyColor * _Exposure);
+                // ACES filmic tonemap — proper S-curve with toe/shoulder.
+                skyColor *= _Exposure;
+                skyColor = (skyColor * (2.51 * skyColor + 0.03))
+                         / (skyColor * (2.43 * skyColor + 0.59) + 0.14);
 
                 return half4(saturate(skyColor), 1.0);
             }

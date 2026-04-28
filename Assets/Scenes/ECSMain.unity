@@ -367,13 +367,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 705507993}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.10938167, y: -0.8754261, z: 0.40821788, w: 0.23456976}
+  m_LocalRotation: {x: 0.14845252, y: -0.79124016, z: 0.55403227, w: 0.2120122}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 1455696525}
-  m_LocalEulerAnglesHint: {x: 50, y: -150, z: 0}
+  m_LocalEulerAnglesHint: {x: 70, y: -150, z: 0}
 --- !u!114 &705507996
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -629,6 +629,50 @@ MonoBehaviour:
   characterName: character
   progressName: progress-bar
   textName: loading-text
+--- !u!1 &1333765794
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1333765795}
+  - component: {fileID: 1333765796}
+  m_Layer: 0
+  m_Name: Spawn Point 4
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1333765795
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1333765794}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.002298936, y: 0.4785087, z: -0.0012528041, w: 0.87807894}
+  m_LocalPosition: {x: -1233.1483, y: 40.995945, z: -585.7021}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1333765796
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1333765794}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cc846373eb142c44b3e3cddf4379d37, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::IVUnity.ECS.GameMode.SpawnPoint
 --- !u!1 &1455696524
 GameObject:
   m_ObjectHideFlags: 0
@@ -722,7 +766,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1582905540
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -875,3 +919,4 @@ SceneRoots:
   - {fileID: 1553215387}
   - {fileID: 233945963}
   - {fileID: 1582905541}
+  - {fileID: 1333765795}

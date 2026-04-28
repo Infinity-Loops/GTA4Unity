@@ -12,13 +12,11 @@
 // ============================================================================
 
 CBUFFER_START(UnityPerMaterial)
-    float4 _ZenithColor;
-    float4 _HorizonColor;
-    float4 _GroundColor;
-    float4 _NightAmbient;
-
-    float4 _SunsetColor;
-    float  _SunsetSpread;
+    float  _SunIntensity;
+    float  _AtmoDensity;
+    float  _MieStrength;
+    float  _MieAnisotropy;
+    float  _OzoneStrength;
 
     float  _SunDiscSize;
     float  _SunGlowIntensity;

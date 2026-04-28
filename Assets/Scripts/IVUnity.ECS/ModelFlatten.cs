@@ -72,21 +72,16 @@ namespace IVUnity.ECS
                     {
                         var bone = bones[boneIndex];
 
-                        // Use ABSOLUTE position (relative to skeleton root) rather than local
-                        // Position (relative to parent bone). For hierarchical skeletons
-                        // (root → pole → lamp), applying only the lamp's local Position puts
-                        // it near the pole-bone's location instead of stacked above the pole
-                        // — the lamp ends up at ground level.
                         var absPos = bone.AbsolutePosition;
+                        var p = RageCoordinates.Position(new UnityEngine.Vector3(absPos.X, absPos.Y, absPos.Z));
+                        var pos = new float3(p.x, p.y, p.z);
 
-                        // AbsoluteRotationEuler is stored as XYZ radians. Unity.Mathematics
-                        // quaternion.EulerXYZ takes radians directly; no degree conversion.
                         var eulerRad = bone.AbsoluteRotationEuler;
-                        var rot = quaternion.EulerXYZ(eulerRad.X, eulerRad.Y, eulerRad.Z);
+                        var rageQuat = quaternion.EulerXYZ(eulerRad.X, eulerRad.Y, eulerRad.Z);
+                        var r = RageCoordinates.RotationInternal(new Quaternion(rageQuat.value.x, rageQuat.value.y, rageQuat.value.z, rageQuat.value.w));
+                        var rot = new quaternion(r.x, r.y, r.z, r.w);
 
-                        local = LocalTransform.FromPositionRotation(
-                            new float3(absPos.X, absPos.Y, absPos.Z),
-                            rot);
+                        local = LocalTransform.FromPositionRotation(pos, rot);
                     }
                 }
 

@@ -85,6 +85,7 @@ Material:
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
     - _AlphaToMask: 0
+    - _AtmoDensity: 0.7
     - _AtmosphereExposure: 1
     - _AzimuthTransitionPosition: 0.5
     - _Blend: 0
@@ -153,11 +154,13 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _Metallic: 0
+    - _MieAnisotropy: 0.99
     - _MieG: 0.5
-    - _MieStrength: 2
+    - _MieStrength: 0.00754
     - _MoonGlow: 0.5
     - _MoonSize: 0.05
     - _OcclusionStrength: 1
+    - _OzoneStrength: 1.5
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _RayleighStrength: 2
@@ -194,6 +197,7 @@ Material:
     - _CloudWindSpeed: {r: 1, g: 0, b: 1, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GroundAlbedo: {r: 1, g: 1, b: 1, a: 1}
     - _GroundColor: {r: 0.36999997, g: 0.34999996, b: 0.33999997, a: 1}
     - _HorizonColor: {r: 0.5683072, g: 0.74497193, b: 0.9339623, a: 1}
     - _NightAmbient: {r: 0.02, g: 0.02, b: 0.079999976, a: 1}
