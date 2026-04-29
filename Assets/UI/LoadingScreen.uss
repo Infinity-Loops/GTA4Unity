@@ -21,14 +21,14 @@
 
 .character {
     position: absolute;
-    bottom: 0;
+    bottom: -16;
     left: 0;
     /* Square 1:1 aspect, anchored to the bottom of the screen. The horizontal slide
        animation (LoadingScreenView updates style.left each frame) moves it left → right. */
-    width: 512px;
-    height: 512px;
+    width: 1024px;
+    height: 1024px;
     -unity-background-scale-mode: scale-to-fit;
-    scale: 1 -1;
+    scale: 1.5 -1;
 }
 
 .bottom-bar {
@@ -50,4 +50,8 @@
 
 .progress-bar {
     height: 24px;
+}
+
+.progress-bar .unity-progress-bar__progress {
+    background-color: rgb(232, 140, 0);
 }

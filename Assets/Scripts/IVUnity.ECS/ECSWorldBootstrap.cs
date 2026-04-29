@@ -54,11 +54,10 @@ namespace IVUnity.ECS
         {
             if (string.IsNullOrEmpty(gameDir))
             {
-                Debug.LogError("[ECSWorldBootstrap] gameDir is empty — set it in the Inspector");
+                Debug.LogError("[ECSWorldBootstrap] gameDir is empty - set it in the Inspector");
                 return;
             }
 
-            // --- 1. Filesystem + key ---
             fs = new RealFileSystem();
             var keyUtil = new KeyUtilGTAIV();
             byte[] key = keyUtil.FindKey(gameDir);
@@ -70,17 +69,18 @@ namespace IVUnity.ECS
             KeyStore.SetKeyLoader(() => key);
             fs.Open(gameDir);
 
-            // --- 2. Loading-screen textures ---
             SetupLoadingScreenImages(fs);
 
+            await Awaitable.NextFrameAsync();
+            
             // --- 3. Parse gta.dat + IMGs + IDEs + IPLs + water (managed, awaitable) ---
             gameLoader = new GTADatLoader(gameDir, fs);
             await gameLoader.LoadGameFiles(() => { /* legacy callback; ECS finalizes below */ });
-
+            
             // --- 4. Resolver init ---
             LoadingScreen.AdvanceProgress("Configuring material resolver...", 0);
             IVUnity.Resolver.MaterialResolver.Configure(gameLoader);
-
+            
             // --- 5..8 on main thread ---
             BakeAndFinalize();
         }

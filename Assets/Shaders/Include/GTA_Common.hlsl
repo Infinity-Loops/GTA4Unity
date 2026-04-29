@@ -66,8 +66,16 @@ struct GTA_Varyings_Shadow
 // Then subtract 0.5 from XY and derive Z = sqrt(1 - X² - Y²).
 half3 GTA_UnpackNormal(half4 packedNormal)
 {
-    // Try .grb swizzle (Y,X,Z) — common DX9→Unity tangent space mismatch
-    return UnpackNormalRGB(packedNormal.rgba, 1);
+    // Engine auto-detection (gta_normalPS1.asm lines 154-168):
+    // if (1 - A - R >= 0) → DXT5nm: X = Alpha, Y = Green
+    // else → standard RGB: X = Red, Y = Green
+    // Then reconstruct Z = sqrt(1 - X² - Y²)
+    half2 xy = (1.0 - packedNormal.a - packedNormal.r >= 0.0)
+        ? packedNormal.ag * 2.0 - 1.0
+        : packedNormal.rg * 2.0 - 1.0;
+    xy.y = -xy.y;
+    half z = sqrt(max(1.0 - dot(xy, xy), 0.0));
+    return half3(xy, z);
 }
 
 // Transform tangent-space normal to world space using TBN from vertex data.

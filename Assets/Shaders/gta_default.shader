@@ -117,7 +117,7 @@ Shader "GTA IV/gta_default"
 
             half4 frag(GTA_Varyings_Shadow i) : SV_Target
             {
-                GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
+                //GTA_StippleClip(i.positionCS.xy, _StippleAlpha);
                 clip(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a - 0.5);
                 return 0;
             }

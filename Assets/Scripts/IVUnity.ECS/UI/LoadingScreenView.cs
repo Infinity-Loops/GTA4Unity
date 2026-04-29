@@ -85,11 +85,20 @@ namespace IVUnity.ECS.UI
             return backgroundElement != null; // treat as resolved when we have at least the background
         }
 
+        private bool initialSplashApplied;
+
         private void Update()
         {
             if (hidden) return;
             if (!TryResolveElements()) return;
             if (!splashesReady || characterElement == null) return;
+
+            if (!initialSplashApplied)
+            {
+                initialSplashApplied = true;
+                ShuffleSplash();
+                switchTimer = Time.time + switchLoadingScreenTime;
+            }
 
             characterX += characterMoveSpeed * Time.deltaTime;
             characterElement.style.left = characterX;

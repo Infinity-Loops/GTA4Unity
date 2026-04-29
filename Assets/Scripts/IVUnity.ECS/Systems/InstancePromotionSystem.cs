@@ -62,7 +62,7 @@ namespace IVUnity.ECS
                 Layer              = 0,
                 RenderingLayerMask = 0xffffffff,
                 MotionMode         = MotionVectorGenerationMode.Camera,
-                ShadowCastingMode  = ShadowCastingMode.On,
+                ShadowCastingMode  = ShadowCastingMode.TwoSided,
                 ReceiveShadows     = true,
                 StaticShadowCaster = false,
             };
