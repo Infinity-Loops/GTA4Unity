@@ -26,9 +26,10 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource
 {
-    // gtaFragType
+    // rage::fragType / gtaFragType
     public class FragTypeModel : IFileAccess, IDataReader, IEmbeddedResourceReader, IDisposable
     {
+        // rage::fragTypeChild (0xC0 bytes per child)
         public class FragTypeChild : IFileAccess
         {
             public DrawableModel Drawable { get; set; }

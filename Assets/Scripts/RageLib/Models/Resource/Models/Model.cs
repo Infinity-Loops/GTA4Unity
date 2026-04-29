@@ -25,6 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
+    // rage::grmModel
     public class Model : DATBase, IFileAccess
     {
         public PtrCollection<Geometry> Geometries { get; private set; }

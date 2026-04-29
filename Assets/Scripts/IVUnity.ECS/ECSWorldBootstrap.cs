@@ -94,8 +94,10 @@ namespace IVUnity.ECS
             MeshCache   = new MeshCache();
             ModelLoader = new ModelLoader(maxParallel: 8);
 
+            CollisionBuilder.StartBuild(this, gameLoader, transform);
             WorldEntityBaker.Bake(em, gameLoader, Catalog, StreamingConfig.Default.CellSize);
             IVUnity.WaterBuilder.Build(gameLoader.waterPlanes, gameLoader.root, transform);
+            // IVUnity.CollisionDebugRenderer.RenderAll(gameLoader, transform);
 
             // Wire per-system managed dependencies. GetExistingSystemManaged is null-safe:
             // if a system type hasn't been created yet for this World, we skip gracefully.

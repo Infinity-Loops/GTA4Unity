@@ -70,7 +70,9 @@ namespace RageLib.Textures
         public uint Width { get; private set; }
         public uint Height { get; private set; }
         public TextureType TextureType { get; private set; }
-        public byte[] TextureData { get { return Info.TextureData; } }
+        public byte[] TextureData => Info.TextureData;
+        internal int TextureDataOffset => Info.TextureDataOffset;
+        internal int TextureDataLength => Info.TextureDataLength;
         public string Name { get; private set; }
         public int Levels { get; private set; }
 
@@ -173,39 +175,32 @@ namespace RageLib.Textures
 
         public uint GetWidth(int level)
         {
-            return Width / (uint)Math.Pow(2, level);
+            return Width >> level;
         }
 
         public uint GetHeight(int level)
         {
-            return Height / (uint)Math.Pow(2, level);
+            return Height >> level;
         }
 
         public byte[] GetTextureData(int level)
         {
-            byte[] data;
-            if (level == 0)
-            {
-                data = TextureData;
-            }
-            else
-            {
-                uint offset = 0;
-                for (var i = 0; i < level; i++)
-                {
-                    offset += GetTextureDataSize(i);
-                }
-                var size = GetTextureDataSize(level);
+            uint offset = (uint)TextureDataOffset;
+            for (int i = 0; i < level; i++)
+                offset += GetTextureDataSize(i);
+            var size = (int)GetTextureDataSize(level);
 
-                data = new byte[size];
-                Array.Copy(TextureData, offset, data, 0, size);
-            }
+            if (level == 0 && TextureDataOffset == 0 && size == TextureData.Length)
+                return TextureData;
+
+            var data = new byte[size];
+            Buffer.BlockCopy(TextureData, (int)offset, data, 0, size);
             return data;
         }
 
         public unsafe NativeArray<byte> GetTextureDataNative(int level, Allocator allocator)
         {
-            uint offset = 0;
+            uint offset = (uint)TextureDataOffset;
             for (int i = 0; i < level; i++)
                 offset += GetTextureDataSize(i);
             int size = (int)GetTextureDataSize(level);
@@ -220,11 +215,9 @@ namespace RageLib.Textures
 
         public void SetTextureData(int level, byte[] data)
         {
-            uint offset = 0;
+            uint offset = (uint)TextureDataOffset;
             for (var i = 0; i < level; i++)
-            {
                 offset += GetTextureDataSize(i);
-            }
             var size = GetTextureDataSize(level);
 
             Array.Copy(data, 0, TextureData, offset, size);

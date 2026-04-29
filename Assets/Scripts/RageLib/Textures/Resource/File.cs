@@ -86,14 +86,24 @@ namespace RageLib.Textures.Resource
                 TexturesByHash.Add(textureHashes[i], info);
             }
 
-            // Gfx
-
-            ms = graphicsMemory;
-            br = new BinaryReader(ms);
-
-            for (int i = 0; i < Header.TextureCount; i++)
+            // Gfx - try zero-copy path if the stream is a MemoryStream
+            if (graphicsMemory is MemoryStream gfxMs && gfxMs.TryGetBuffer(out var gfxBuffer))
             {
-                Textures[i].ReadData(br);
+                byte[] gfxData = gfxBuffer.Array;
+                int gfxOffset = gfxBuffer.Offset;
+                for (int i = 0; i < Header.TextureCount; i++)
+                {
+                    Textures[i].ReadData(gfxData);
+                }
+            }
+            else
+            {
+                ms = graphicsMemory;
+                br = new BinaryReader(ms);
+                for (int i = 0; i < Header.TextureCount; i++)
+                {
+                    Textures[i].ReadData(br);
+                }
             }
         }
 

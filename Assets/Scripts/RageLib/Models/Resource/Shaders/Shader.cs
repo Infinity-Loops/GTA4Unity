@@ -27,6 +27,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Shaders
 {
+    // rage::grmShaderFx
     public class Shader : PGBase, IFileAccess
     {
         private ushort Unknown1 { get; set; }

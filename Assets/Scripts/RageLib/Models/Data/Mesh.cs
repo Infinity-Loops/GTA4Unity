@@ -92,50 +92,50 @@ namespace RageLib.Models.Data
             return vertices;
         }
 
-        public CleanVertex[] DecodeUnityBurstVertexData()
+        public unsafe CleanVertex[] DecodeUnityBurstVertexData()
         {
             byte[] data = VertexData;
             int stride = VertexStride;
             int count = VertexCount;
             var vertices = new CleanVertex[count];
 
-            for (int i = 0; i < count; i++)
+            bool hasPos = posOffset >= 0;
+            bool hasNormal = normalOffset >= 0;
+            bool hasUV = uvOffset >= 0;
+            bool hasColor = colorOffset >= 0;
+
+            fixed (byte* basePtr = data)
             {
-                int b = i * stride;
-                CleanVertex v = default;
-
-                if (posOffset >= 0)
+                for (int i = 0; i < count; i++)
                 {
-                    int off = b + posOffset;
-                    v.Position = new UnityEngine.Vector3(
-                        BitConverter.ToSingle(data, off),
-                        BitConverter.ToSingle(data, off + 4),
-                        BitConverter.ToSingle(data, off + 8));
-                }
+                    byte* b = basePtr + i * stride;
+                    CleanVertex v = default;
 
-                if (normalOffset >= 0)
-                {
-                    int off = b + normalOffset;
-                    v.Normal = new UnityEngine.Vector3(
-                        BitConverter.ToSingle(data, off),
-                        BitConverter.ToSingle(data, off + 4),
-                        BitConverter.ToSingle(data, off + 8));
-                }
+                    if (hasPos)
+                    {
+                        float* p = (float*)(b + posOffset);
+                        v.Position = new UnityEngine.Vector3(p[0], p[1], p[2]);
+                    }
 
-                if (uvOffset >= 0)
-                {
-                    int off = b + uvOffset;
-                    v.TextureCoordinates = new UnityEngine.Vector2(
-                        BitConverter.ToSingle(data, off),
-                        BitConverter.ToSingle(data, off + 4));
-                }
+                    if (hasNormal)
+                    {
+                        float* n = (float*)(b + normalOffset);
+                        v.Normal = new UnityEngine.Vector3(n[0], n[1], n[2]);
+                    }
 
-                if (colorOffset >= 0)
-                {
-                    v.DiffuseColor = BitConverter.ToUInt32(data, b + colorOffset);
-                }
+                    if (hasUV)
+                    {
+                        float* t = (float*)(b + uvOffset);
+                        v.TextureCoordinates = new UnityEngine.Vector2(t[0], t[1]);
+                    }
 
-                vertices[i] = v;
+                    if (hasColor)
+                    {
+                        v.DiffuseColor = *(uint*)(b + colorOffset);
+                    }
+
+                    vertices[i] = v;
+                }
             }
 
             return vertices;

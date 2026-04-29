@@ -6,6 +6,7 @@ using RageLib.Models.Resource.Skeletons;      // Bone
 using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
+using Vector4 = RageLib.Common.ResourceTypes.Vector4;
 
 namespace IVUnity.ECS
 {
@@ -57,36 +58,66 @@ namespace IVUnity.ECS
             SimpleArray<Bone> bones = fragModel.Skeleton?.Bones;
             int boneCount = bones?.Count ?? 0;
 
+            LocalTransform[] boneTransforms = null;
+            if (boneCount > 0)
+            {
+                boneTransforms = BuildBoneWorldTransforms(bones, boneCount);
+            }
+
             for (int i = 0; i < root.Children.Count; i++)
             {
                 var child = root.Children[i];
 
-                // Parent drawable (FragmentChildIndex == -1) and children with no FragTypeChild
-                // reference render at identity.
                 LocalTransform local = LocalTransform.Identity;
 
-                if (child.FragmentChildIndex >= 0 && child.FragmentChild != null && boneCount > 0)
+                if (child.FragmentChildIndex >= 0 && child.FragmentChild != null && boneTransforms != null)
                 {
                     int boneIndex = child.FragmentChild.BoneIndex;
                     if (boneIndex >= 0 && boneIndex < boneCount)
-                    {
-                        var bone = bones[boneIndex];
-
-                        var absPos = bone.AbsolutePosition;
-                        var p = RageCoordinates.Position(new UnityEngine.Vector3(absPos.X, absPos.Y, absPos.Z));
-                        var pos = new float3(p.x, p.y, p.z);
-
-                        var eulerRad = bone.AbsoluteRotationEuler;
-                        var rageQuat = quaternion.EulerXYZ(eulerRad.X, eulerRad.Y, eulerRad.Z);
-                        var r = RageCoordinates.RotationInternal(new Quaternion(rageQuat.value.x, rageQuat.value.y, rageQuat.value.z, rageQuat.value.w));
-                        var rot = new quaternion(r.x, r.y, r.z, r.w);
-
-                        local = LocalTransform.FromPositionRotation(pos, rot);
-                    }
+                        local = boneTransforms[boneIndex];
                 }
 
                 Walk(child, output, local);
             }
+        }
+
+        private static LocalTransform[] BuildBoneWorldTransforms(SimpleArray<Bone> bones, int count)
+        {
+            var ragePos = new UnityEngine.Vector3[count];
+            var rageRot = new UnityEngine.Quaternion[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                var bone = bones[i];
+                var localPos = new UnityEngine.Vector3(bone.Position.X, bone.Position.Y, bone.Position.Z);
+                var localRot = new UnityEngine.Quaternion(
+                    bone.RotationQuaternion.X, bone.RotationQuaternion.Y,
+                    bone.RotationQuaternion.Z, bone.RotationQuaternion.W);
+
+                int parentIdx = bone.Parent != null ? bone.Parent.BoneIndex : -1;
+                if (parentIdx >= 0 && parentIdx < count)
+                {
+                    ragePos[i] = ragePos[parentIdx] + rageRot[parentIdx] * localPos;
+                    rageRot[i] = rageRot[parentIdx] * localRot;
+                }
+                else
+                {
+                    ragePos[i] = localPos;
+                    rageRot[i] = localRot;
+                }
+            }
+
+            var result = new LocalTransform[count];
+            for (int i = 0; i < count; i++)
+            {
+                var p = RageCoordinates.Position(ragePos[i]);
+                var r = RageCoordinates.RotationInternal(rageRot[i]);
+                result[i] = LocalTransform.FromPositionRotation(
+                    new float3(p.x, p.y, p.z),
+                    new quaternion(r.x, r.y, r.z, r.w));
+            }
+
+            return result;
         }
 
         private static void Walk(ModelNode node, List<FlatSubMesh> output, LocalTransform parentTransform)

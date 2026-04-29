@@ -25,6 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
+    // rage::grcIndexBufferD3D
     public class IndexBuffer : DATBase, IFileAccess
     {
         public uint IndexCount { get; private set; }
@@ -43,8 +44,17 @@ namespace RageLib.Models.Resource.Models
 
         public void ReadData(BinaryReader br)
         {
+            int size = (int)(IndexCount * 2);
+            RawData = new byte[size];
             br.BaseStream.Seek(DataOffset, SeekOrigin.Begin);
-            RawData = br.ReadBytes((int)(IndexCount * 2));
+            br.BaseStream.Read(RawData, 0, size);
+        }
+
+        public void ReadData(byte[] graphicsMemData)
+        {
+            int size = (int)(IndexCount * 2);
+            RawData = new byte[size];
+            System.Buffer.BlockCopy(graphicsMemData, (int)DataOffset, RawData, 0, size);
         }
 
         #region Implementation of IFileAccess

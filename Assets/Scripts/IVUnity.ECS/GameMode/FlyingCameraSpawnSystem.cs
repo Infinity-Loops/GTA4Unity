@@ -1,3 +1,4 @@
+using IVUnity.ECS.Physics;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -29,7 +30,9 @@ namespace IVUnity.ECS.GameMode
                 typeof(FlyingCameraInput),
                 typeof(FlyingCameraSettings),
                 typeof(CameraTarget),
-                typeof(Possessed));
+                typeof(Possessed),
+                typeof(PhysicsProxy),
+                typeof(PhysicsInput));
 
             float3 startPos = new float3(0, 100, 0);
             float startYaw = 0f;
@@ -55,6 +58,15 @@ namespace IVUnity.ECS.GameMode
                 MouseSensitivity = 2f,
                 Yaw = startYaw,
                 Pitch = startPitch,
+            });
+
+            em.SetComponentData(e, new PhysicsProxy
+            {
+                ColliderType = ProxyColliderType.Sphere,
+                Size = new float3(0.5f, 0, 0),
+                Mass = 1f,
+                LinearDamping = 5f,
+                UseGravity = false
             });
 
             spawned = true;

@@ -25,6 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
+    // rage::grmGeometry / rage::grmGeometryQB
     public class Geometry : DATBase, IFileAccess
     {
         // grmGeometry/grmGeometryQB fields

@@ -1,3 +1,4 @@
+using IVUnity.ECS.Physics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -53,13 +54,17 @@ namespace IVUnity.ECS.GameMode
                 moveDir = math.normalize(moveDir);
 
             float speed = settings.MoveSpeed * input.SpeedMultiplier;
-            float3 newPos = transform.Position + moveDir * speed * dt;
 
-            EntityManager.SetComponentData(e, LocalTransform.FromPositionRotation(newPos, rot));
+            // Write desired velocity - PhysicsProxySystem applies it to PhysX and syncs position back
+            EntityManager.SetComponentData(e, new PhysicsInput { Velocity = moveDir * speed });
+
+            // Update rotation (physics doesn't rotate the camera)
+            transform.Rotation = rot;
+            EntityManager.SetComponentData(e, transform);
             EntityManager.SetComponentData(e, settings);
             EntityManager.SetComponentData(e, new CameraTarget
             {
-                Position = newPos,
+                Position = transform.Position,
                 Rotation = rot,
             });
         }

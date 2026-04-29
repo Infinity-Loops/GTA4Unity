@@ -24,6 +24,7 @@ using RageLib.Common;
 
 namespace RageLib.Models.Resource.Models
 {
+    // rage::grcVertexDeclaration
     public class VertexDeclaration : IFileAccess
     {
         public uint UsageFlags { get; set; }

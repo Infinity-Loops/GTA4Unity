@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 
 /// <summary>
@@ -33,6 +34,19 @@ public static class RageCoordinates
     public static Quaternion RotationInternal(Quaternion rageInternal)
     {
         return new Quaternion(rageInternal.x, -rageInternal.z, rageInternal.y, rageInternal.w);
+    }
+
+    /// <summary>Convert RAGE Euler angles (radians, XYZ order) to a Unity Quaternion.</summary>
+    public static quaternion RotationEuler(float rx, float ry, float rz)
+    {
+        var q = quaternion.EulerXYZ(rx, ry, rz);
+        return new quaternion(q.value.x, -q.value.z, q.value.y, q.value.w);
+    }
+
+    /// <summary>Convert a RAGE position (3 floats) to a Unity float3.</summary>
+    public static float3 Position(float x, float y, float z)
+    {
+        return new float3(-x, z, -y);
     }
 
     /// <summary>

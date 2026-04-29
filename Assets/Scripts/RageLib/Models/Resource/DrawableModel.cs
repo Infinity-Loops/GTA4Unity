@@ -66,6 +66,12 @@ namespace RageLib.Models.Resource
 
         public void ReadData(BinaryReader br)
         {
+            if (br.BaseStream is MemoryStream ms && ms.TryGetBuffer(out var buffer))
+            {
+                ReadData(buffer.Array);
+                return;
+            }
+
             foreach (var geometryInfo in ModelCollection)
             {
                 foreach (var info in geometryInfo)
@@ -74,7 +80,22 @@ namespace RageLib.Models.Resource
                     {
                         dataInfo.VertexBuffer.ReadData(br);
                         dataInfo.IndexBuffer.ReadData(br);
-                    }                    
+                    }
+                }
+            }
+        }
+
+        public void ReadData(byte[] graphicsMemData)
+        {
+            foreach (var geometryInfo in ModelCollection)
+            {
+                foreach (var info in geometryInfo)
+                {
+                    foreach (var dataInfo in info.Geometries)
+                    {
+                        dataInfo.VertexBuffer.ReadData(graphicsMemData);
+                        dataInfo.IndexBuffer.ReadData(graphicsMemData);
+                    }
                 }
             }
         }

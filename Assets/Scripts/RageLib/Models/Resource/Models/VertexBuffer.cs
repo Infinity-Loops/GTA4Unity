@@ -25,6 +25,7 @@ using RageLib.Common.ResourceTypes;
 
 namespace RageLib.Models.Resource.Models
 {
+    // rage::grcVertexBufferD3D
     public class VertexBuffer : DATBase, IFileAccess
     {
         public ushort VertexCount { get; private set; }
@@ -49,8 +50,17 @@ namespace RageLib.Models.Resource.Models
 
         public void ReadData(BinaryReader br)
         {
+            int size = (int)(VertexCount * StrideSize);
+            RawData = new byte[size];
             br.BaseStream.Seek(DataOffset, SeekOrigin.Begin);
-            RawData = br.ReadBytes((int) (VertexCount*StrideSize));
+            br.BaseStream.Read(RawData, 0, size);
+        }
+
+        public void ReadData(byte[] graphicsMemData)
+        {
+            int size = (int)(VertexCount * StrideSize);
+            RawData = new byte[size];
+            System.Buffer.BlockCopy(graphicsMemData, (int)DataOffset, RawData, 0, size);
         }
 
         #region Implementation of IFileAccess

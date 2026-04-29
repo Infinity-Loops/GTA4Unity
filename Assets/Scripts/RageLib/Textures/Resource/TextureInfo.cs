@@ -25,6 +25,7 @@ using RageLib.Common.Resources;
 
 namespace RageLib.Textures.Resource
 {
+    // rage::grcTexturePC
     public class TextureInfo : IFileAccess
     {
         public File File { get; set; }
@@ -61,15 +62,26 @@ namespace RageLib.Textures.Resource
 
         internal uint RawDataOffset { get; set; }
         public byte[] TextureData { get; private set; }
+        internal int TextureDataOffset { get; private set; }
+        internal int TextureDataLength { get; private set; }
 
         private uint Unknown6 { get; set; }
+
+        public void ReadData(byte[] graphicsMemData)
+        {
+            int dataSize = GetTotalDataSize();
+            TextureData = graphicsMemData;
+            TextureDataOffset = (int)RawDataOffset;
+            TextureDataLength = dataSize;
+        }
 
         public void ReadData(BinaryReader br)
         {
             int dataSize = GetTotalDataSize();
-
             br.BaseStream.Seek(RawDataOffset, SeekOrigin.Begin);
             TextureData = br.ReadBytes(dataSize);
+            TextureDataOffset = 0;
+            TextureDataLength = dataSize;
         }
 
         internal int GetTotalDataSize()
