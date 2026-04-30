@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using RageLib.Collision;
-using Unity.Burst;
 using Unity.Collections;
-using Unity.Jobs;
+using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
+using Unity.Transforms;
 using UnityEngine;
+using Collider = Unity.Physics.Collider;
 
 namespace IVUnity
 {
@@ -15,16 +17,17 @@ namespace IVUnity
     {
         private struct ParsedWbn
         {
-            public Vector3[] Vertices;
-            public PolygonData[] Polygons;
+            public float3[] Vertices;
+            public int3[] Triangles;
+            public int4[] Quads;
         }
 
         public static void StartBuild(MonoBehaviour host, GTADatLoader loader, Transform parent)
         {
-            host.StartCoroutine(BuildCoroutine(loader, parent));
+            host.StartCoroutine(BuildCoroutine(loader));
         }
 
-        private static IEnumerator BuildCoroutine(GTADatLoader loader, Transform parent)
+        private static IEnumerator BuildCoroutine(GTADatLoader loader)
         {
             var wbnFiles = new List<RageLib.FileSystem.Common.File>();
             foreach (var kv in loader.gameFiles)
@@ -35,7 +38,7 @@ namespace IVUnity
 
             Debug.Log($"[CollisionBuilder] Parsing {wbnFiles.Count} .wbn files...");
 
-            // Phase 1: parse all .wbn on a worker thread (managed IO, can't Burst)
+            // Phase 1: parse all .wbn on worker thread
             List<ParsedWbn> parsed = null;
             bool parseDone = false;
 
@@ -48,14 +51,14 @@ namespace IVUnity
             while (!parseDone)
                 yield return null;
 
-            Debug.Log($"[CollisionBuilder] Parsed {parsed.Count} collision meshes. Building with Burst...");
+            Debug.Log($"[CollisionBuilder] Parsed {parsed.Count} collision meshes. Building ECS colliders...");
 
-            // Phase 2: Burst jobs to build mesh arrays, then bake in parallel
-            var go = new GameObject("WorldCollision");
-            go.transform.SetParent(parent, false);
-            go.isStatic = true;
+            // Phase 2: create ECS collider entities using RageMeshCollider (fast path)
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null) yield break;
+            var em = world.EntityManager;
 
-            var meshes = new List<Mesh>();
+            int created = 0;
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             for (int i = 0; i < parsed.Count; i++)
@@ -63,84 +66,38 @@ namespace IVUnity
                 var p = parsed[i];
                 if (p.Vertices == null || p.Vertices.Length == 0) continue;
 
-                var srcVerts = new NativeArray<float3>(p.Vertices.Length, Allocator.TempJob);
-                for (int v = 0; v < p.Vertices.Length; v++)
-                    srcVerts[v] = new float3(p.Vertices[v].x, p.Vertices[v].y, p.Vertices[v].z);
+                var verts = new NativeArray<float3>(p.Vertices, Allocator.Temp);
+                var tris = new NativeArray<int3>(p.Triangles, Allocator.Temp);
+                var quads = new NativeArray<int4>(p.Quads, Allocator.Temp);
 
-                var polyData = new NativeArray<PolygonData>(p.Polygons.Length, Allocator.TempJob);
-                int triCount = 0;
-                for (int pi = 0; pi < p.Polygons.Length; pi++)
+                var blob = IVUnity.Physics.RageMeshCollider.Create(verts, tris, quads);
+
+                verts.Dispose();
+                tris.Dispose();
+                quads.Dispose();
+
+                if (blob.IsCreated)
                 {
-                    polyData[pi] = p.Polygons[pi];
-                    triCount += p.Polygons[pi].IsQuad ? 2 : 1;
+                    var entity = em.CreateEntity(
+                        typeof(LocalTransform),
+                        typeof(LocalToWorld),
+                        typeof(PhysicsCollider),
+                        typeof(PhysicsWorldIndex));
+
+                    em.SetComponentData(entity, LocalTransform.FromPosition(float3.zero));
+                    em.SetComponentData(entity, new PhysicsCollider { Value = blob });
+                    em.SetSharedComponent(entity, new PhysicsWorldIndex { Value = 0 });
+                    created++;
                 }
 
-                var outTris = new NativeList<int3>(triCount, Allocator.TempJob);
-
-                // Schedule Burst job
-                var job = new BuildTrianglesJob
-                {
-                    Polygons = polyData,
-                    NumVertices = p.Vertices.Length,
-                    Triangles = outTris
-                };
-                job.Schedule().Complete();
-
-                // Create mesh
-                var mesh = new Mesh();
-                if (srcVerts.Length > 65535)
-                    mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-
-                mesh.SetVertices(srcVerts);
-                mesh.SetIndices(outTris.AsArray().Reinterpret<int>(12), MeshTopology.Triangles, 0);
-                meshes.Add(mesh);
-
-                srcVerts.Dispose();
-                polyData.Dispose();
-                outTris.Dispose();
-
-                if (sw.ElapsedMilliseconds > 8)
+                if (sw.ElapsedMilliseconds > 12)
                 {
                     sw.Restart();
                     yield return null;
                 }
             }
 
-            // Free parsed data
-            parsed = null;
-
-            Debug.Log($"[CollisionBuilder] Built {meshes.Count} meshes. Baking PhysX BVH...");
-
-            // Phase 3: bake on worker threads in parallel batches
-            const int bakeBatch = 32;
-            for (int batch = 0; batch < meshes.Count; batch += bakeBatch)
-            {
-                int end = Mathf.Min(batch + bakeBatch, meshes.Count);
-                int remaining = end - batch;
-                int done = 0;
-
-                for (int i = batch; i < end; i++)
-                {
-                    int meshId = meshes[i].GetInstanceID();
-                    ThreadPool.QueueUserWorkItem(_ =>
-                    {
-                        Physics.BakeMesh(meshId, false);
-                        Interlocked.Increment(ref done);
-                    });
-                }
-
-                while (done < remaining)
-                    yield return null;
-            }
-
-            // Phase 4: attach all MeshColliders to single GameObject
-            for (int i = 0; i < meshes.Count; i++)
-            {
-                var mc = go.AddComponent<MeshCollider>();
-                mc.sharedMesh = meshes[i];
-            }
-
-            Debug.Log($"[CollisionBuilder] World collision ready: {meshes.Count} colliders");
+            Debug.Log($"[CollisionBuilder] Done: {created} ECS colliders from {parsed.Count} files");
         }
 
         private static List<ParsedWbn> ParseAll(List<RageLib.FileSystem.Common.File> files)
@@ -159,80 +116,67 @@ namespace IVUnity
                     if (collisionFile.Geometries == null || collisionFile.Geometries.Length == 0)
                         continue;
 
-                    // Merge all geometries in this .wbn into one vertex/polygon set
-                    int totalVerts = 0, totalPolys = 0;
+                    // Merge all geometries per .wbn, separating tris and quads
+                    int totalVerts = 0, totalTris = 0, totalQuads = 0;
                     foreach (var geom in collisionFile.Geometries)
                     {
                         if (geom.Vertices == null || geom.Polygons == null) continue;
                         totalVerts += geom.Vertices.Length;
-                        totalPolys += geom.Polygons.Length;
+                        for (int i = 0; i < geom.Polygons.Length; i++)
+                        {
+                            if (geom.Polygons[i].IsQuad) totalQuads++;
+                            else totalTris++;
+                        }
                     }
 
                     if (totalVerts == 0) continue;
 
-                    var vertices = new Vector3[totalVerts];
-                    var polygons = new PolygonData[totalPolys];
-                    int vi = 0, pi = 0;
+                    var vertices = new float3[totalVerts];
+                    var triangles = new int3[totalTris];
+                    var quads = new int4[totalQuads];
+                    int vi = 0, ti = 0, qi = 0;
 
                     foreach (var geom in collisionFile.Geometries)
                     {
                         if (geom.Vertices == null || geom.Polygons == null) continue;
                         int baseVert = vi;
 
-                        System.Array.Copy(geom.Vertices, 0, vertices, vi, geom.Vertices.Length);
-                        vi += geom.Vertices.Length;
+                        for (int i = 0; i < geom.Vertices.Length; i++)
+                            vertices[vi++] = new float3(geom.Vertices[i].x, geom.Vertices[i].y, geom.Vertices[i].z);
 
                         for (int i = 0; i < geom.Polygons.Length; i++)
                         {
                             var poly = geom.Polygons[i];
-                            polygons[pi++] = new PolygonData
+                            int v0 = baseVert + poly.GetVertexIndex(0);
+                            int v1 = baseVert + poly.GetVertexIndex(1);
+                            int v2 = baseVert + poly.GetVertexIndex(2);
+
+                            if (v0 >= totalVerts || v1 >= totalVerts || v2 >= totalVerts) continue;
+
+                            if (poly.IsQuad)
                             {
-                                V0 = baseVert + poly.GetVertexIndex(0),
-                                V1 = baseVert + poly.GetVertexIndex(1),
-                                V2 = baseVert + poly.GetVertexIndex(2),
-                                V3 = baseVert + poly.GetVertexIndex(3),
-                                IsQuad = poly.IsQuad
-                            };
+                                int v3 = baseVert + poly.GetVertexIndex(3);
+                                if (v3 >= totalVerts) continue;
+                                // Winding: v0, v2, v1, v3 for RH->LH
+                                quads[qi++] = new int4(v0, v2, v1, v3);
+                            }
+                            else
+                            {
+                                // Winding: v0, v2, v1 for RH->LH
+                                triangles[ti++] = new int3(v0, v2, v1);
+                            }
                         }
                     }
 
-                    result.Add(new ParsedWbn { Vertices = vertices, Polygons = polygons });
+                    if (ti < totalTris) System.Array.Resize(ref triangles, ti);
+                    if (qi < totalQuads) System.Array.Resize(ref quads, qi);
+
+                    result.Add(new ParsedWbn { Vertices = vertices, Triangles = triangles, Quads = quads });
                 }
                 catch { }
             }
 
             return result;
-        }
-
-        private struct PolygonData
-        {
-            public int V0, V1, V2, V3;
-            public bool IsQuad;
-        }
-
-        [BurstCompile]
-        private struct BuildTrianglesJob : IJob
-        {
-            [ReadOnly] public NativeArray<PolygonData> Polygons;
-            public int NumVertices;
-            public NativeList<int3> Triangles;
-
-            public void Execute()
-            {
-                for (int i = 0; i < Polygons.Length; i++)
-                {
-                    var p = Polygons[i];
-
-                    if (p.V0 >= NumVertices || p.V1 >= NumVertices || p.V2 >= NumVertices)
-                        continue;
-
-                    // RH->LH winding: v0, v2, v1
-                    Triangles.Add(new int3(p.V0, p.V2, p.V1));
-
-                    if (p.IsQuad && p.V3 < NumVertices)
-                        Triangles.Add(new int3(p.V0, p.V3, p.V2));
-                }
-            }
         }
     }
 }

@@ -51,6 +51,15 @@ namespace RageLib.Common.ResourceTypes
             W = br.ReadSingle();
         }
 
+        public unsafe void ReadFrom(byte[] data, int offset)
+        {
+            fixed (byte* p = &data[offset])
+            {
+                float* f = (float*)p;
+                X = f[0]; Y = f[1]; Z = f[2]; W = f[3];
+            }
+        }
+
         public void Write(BinaryWriter bw)
         {
             throw new NotImplementedException();

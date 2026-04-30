@@ -82,41 +82,62 @@ namespace RageLib.Models.Resource.Skeletons
 
         #region Implementation of IFileAccess
 
-        public void Read(BinaryReader br)
+        public unsafe void Read(BinaryReader br)
         {
             Offset = br.BaseStream.Position;
 
-            Name = new PtrString(br).Value;
+            // Read the entire 224-byte bone in one shot
+            byte[] raw = br.ReadBytes(224);
 
-            Dofs = br.ReadInt16();
-            Unknown0 = br.ReadInt16();
+            fixed (byte* p = raw)
+            {
+                // Header (32 bytes)
+                uint namePtr = *(uint*)p;
+                uint nameOff = namePtr == 0 ? 0 : namePtr & 0x0FFFFFFF;
+                Dofs = *(short*)(p + 4);
+                Unknown0 = *(short*)(p + 6);
 
-            NextSiblingOffset = ResourceUtil.ReadOffset(br);
-            FirstChildOffset = ResourceUtil.ReadOffset(br);
-            ParentOffset = ResourceUtil.ReadOffset(br);
+                uint nextRaw = *(uint*)(p + 8);
+                NextSiblingOffset = nextRaw == 0 ? 0 : (nextRaw >> 28) == 5 ? nextRaw & 0x0FFFFFFF : 0;
+                uint childRaw = *(uint*)(p + 12);
+                FirstChildOffset = childRaw == 0 ? 0 : (childRaw >> 28) == 5 ? childRaw & 0x0FFFFFFF : 0;
+                uint parentRaw = *(uint*)(p + 16);
+                ParentOffset = parentRaw == 0 ? 0 : (parentRaw >> 28) == 5 ? parentRaw & 0x0FFFFFFF : 0;
 
-            BoneIndex = br.ReadInt16();
-            BoneID = br.ReadInt16();
-            BoneIndex2 = br.ReadInt16();
-            Unknown1 = br.ReadInt16();
+                BoneIndex = *(short*)(p + 20);
+                BoneID = *(short*)(p + 22);
+                BoneIndex2 = *(short*)(p + 24);
+                Unknown1 = *(short*)(p + 26);
+                Unknown2 = *(int*)(p + 28);
 
-            Unknown2 = br.ReadInt32();
+                // 12 Vector4s (192 bytes at offset 32)
+                float* f = (float*)(p + 32);
+                Position = new Vector4(f[0], f[1], f[2], f[3]);
+                RotationEuler = new Vector4(f[4], f[5], f[6], f[7]);
+                RotationQuaternion = new Vector4(f[8], f[9], f[10], f[11]);
+                Unknown3 = new Vector4(f[12], f[13], f[14], f[15]);
+                AbsolutePosition = new Vector4(f[16], f[17], f[18], f[19]);
+                AbsoluteRotationEuler = new Vector4(f[20], f[21], f[22], f[23]);
+                Unknown4 = new Vector4(f[24], f[25], f[26], f[27]);
+                Unknown5 = new Vector4(f[28], f[29], f[30], f[31]);
+                Unknown6 = new Vector4(f[32], f[33], f[34], f[35]);
+                MinRotationLimit = new Vector4(f[36], f[37], f[38], f[39]);
+                MaxRotationLimit = new Vector4(f[40], f[41], f[42], f[43]);
+                Padding = new Vector4(f[44], f[45], f[46], f[47]);
 
-            Position = new Vector4(br);
-            RotationEuler = new Vector4(br);
-            RotationQuaternion = new Vector4(br);
-            Unknown3 = new Vector4(br);
-
-            AbsolutePosition = new Vector4(br);
-            AbsoluteRotationEuler = new Vector4(br);
-            Unknown4 = new Vector4(br);
-            Unknown5 = new Vector4(br);
-            Unknown6 = new Vector4(br);
-
-            MinRotationLimit = new Vector4(br);
-            MaxRotationLimit = new Vector4(br);
-            Padding = new Vector4(br);
-
+                // Read name string
+                if (nameOff != 0)
+                {
+                    long saved = br.BaseStream.Position;
+                    br.BaseStream.Seek(nameOff, SeekOrigin.Begin);
+                    Name = ResourceUtil.ReadNullTerminatedString(br);
+                    br.BaseStream.Seek(saved, SeekOrigin.Begin);
+                }
+                else
+                {
+                    Name = "";
+                }
+            }
         }
 
         public void Write(BinaryWriter bw)

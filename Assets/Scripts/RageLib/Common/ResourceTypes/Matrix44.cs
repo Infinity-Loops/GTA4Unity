@@ -71,6 +71,17 @@ namespace RageLib.Common.ResourceTypes
             }
         }
 
+        public unsafe void ReadFrom(byte[] data, int offset)
+        {
+            M = new float[16];
+            fixed (byte* p = &data[offset])
+            {
+                float* src = (float*)p;
+                for (int i = 0; i < 16; i++)
+                    M[i] = src[i];
+            }
+        }
+
         public void Write(BinaryWriter bw)
         {
             for (int i = 0; i < 16; i++)

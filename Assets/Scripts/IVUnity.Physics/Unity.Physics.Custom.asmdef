@@ -1,0 +1,16 @@
+{
+    "name": "Unity.Physics.Custom",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Physics",
+        "Unity.Entities",
+        "Unity.Mathematics",
+        "Unity.Collections",
+        "Unity.Burst",
+        "Unity.Transforms"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "autoReferenced": true
+}

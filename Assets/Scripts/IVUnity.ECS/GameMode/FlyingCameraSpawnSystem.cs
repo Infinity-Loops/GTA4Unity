@@ -1,8 +1,9 @@
-using IVUnity.ECS.Physics;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
+using SphereCollider = Unity.Physics.SphereCollider;
 
 namespace IVUnity.ECS.GameMode
 {
@@ -31,8 +32,12 @@ namespace IVUnity.ECS.GameMode
                 typeof(FlyingCameraSettings),
                 typeof(CameraTarget),
                 typeof(Possessed),
-                typeof(PhysicsProxy),
-                typeof(PhysicsInput));
+                typeof(PhysicsCollider),
+                typeof(PhysicsVelocity),
+                typeof(PhysicsMass),
+                typeof(PhysicsDamping),
+                typeof(PhysicsGravityFactor),
+                typeof(PhysicsWorldIndex));
 
             float3 startPos = new float3(0, 100, 0);
             float startYaw = 0f;
@@ -60,14 +65,17 @@ namespace IVUnity.ECS.GameMode
                 Pitch = startPitch,
             });
 
-            em.SetComponentData(e, new PhysicsProxy
+            var sphereCollider = SphereCollider.Create(new SphereGeometry
             {
-                ColliderType = ProxyColliderType.Sphere,
-                Size = new float3(0.5f, 0, 0),
-                Mass = 1f,
-                LinearDamping = 5f,
-                UseGravity = false
+                Center = float3.zero,
+                Radius = 0.5f
             });
+            em.SetComponentData(e, new PhysicsCollider { Value = sphereCollider });
+            em.SetComponentData(e, PhysicsMass.CreateDynamic(sphereCollider.Value.MassProperties, 1f));
+            em.SetComponentData(e, new PhysicsVelocity());
+            em.SetComponentData(e, new PhysicsDamping { Linear = 5f, Angular = 5f });
+            em.SetComponentData(e, new PhysicsGravityFactor { Value = 0f });
+            em.SetSharedComponent(e, new PhysicsWorldIndex { Value = 0 });
 
             spawned = true;
             Debug.Log($"[GameMode] Flying camera spawned at {startPos}");

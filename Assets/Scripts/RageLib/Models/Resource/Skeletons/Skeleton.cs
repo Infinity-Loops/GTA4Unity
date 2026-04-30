@@ -112,14 +112,9 @@ namespace RageLib.Models.Resource.Skeletons
             br.BaseStream.Seek(parentIndicesOffset, SeekOrigin.Begin);
             ParentIndices = new SimpleArray<int>(br, BoneCount, r => r.ReadInt32());
 
-            br.BaseStream.Seek(defaultTransformsOffset, SeekOrigin.Begin);
-            DefaultTransforms = new SimpleArray<Matrix44>(br, BoneCount, r => new Matrix44(r));
-
-            br.BaseStream.Seek(inverseTransformsOffset, SeekOrigin.Begin);
-            InverseTransforms = new SimpleArray<Matrix44>(br, BoneCount, r => new Matrix44(r));
-
-            br.BaseStream.Seek(globalTransformsOffset, SeekOrigin.Begin);
-            GlobalTransforms = new SimpleArray<Matrix44>(br, BoneCount, r => new Matrix44(r));
+            DefaultTransforms = ReadMatrix44Array(br, defaultTransformsOffset, BoneCount);
+            InverseTransforms = ReadMatrix44Array(br, inverseTransformsOffset, BoneCount);
+            GlobalTransforms = ReadMatrix44Array(br, globalTransformsOffset, BoneCount);
 
             // Fun stuff...
             // Build a mapping of Offset -> Bone
@@ -137,6 +132,25 @@ namespace RageLib.Models.Resource.Skeletons
                 bone.FirstChild = boneOffsetMapping[bone.FirstChildOffset];
                 bone.NextSibling = boneOffsetMapping[bone.NextSiblingOffset];
             }
+        }
+
+        private static SimpleArray<Matrix44> ReadMatrix44Array(BinaryReader br, uint offset, int count)
+        {
+            br.BaseStream.Seek(offset, SeekOrigin.Begin);
+            byte[] raw = br.ReadBytes(count * 64);
+            int idx = 0;
+
+            var arr = new SimpleArray<Matrix44>(count, _ =>
+            {
+                var m = new Matrix44();
+                m.ReadFrom(raw, idx * 64);
+                idx++;
+                return m;
+            });
+
+            // Trigger the read via the delegate
+            arr.Read(br);
+            return arr;
         }
 
         public void Write(BinaryWriter bw)
