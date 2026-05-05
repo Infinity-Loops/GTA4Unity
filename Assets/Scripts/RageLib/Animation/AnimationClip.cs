@@ -75,8 +75,7 @@ namespace RageLib.Animation
 
                     clip.MoverPositions = new float3[data.NumFrames];
                     for (int f = 0; f < data.NumFrames; f++)
-                        // RAGE pos (X,Y,Z) -> Unity (-X, Z, -Y)
-                        clip.MoverPositions[f] = new float3(-xVals[f], zVals[f], -yVals[f]);
+                        clip.MoverPositions[f] = new float3(xVals[f], yVals[f], zVals[f]);
                 }
             }
 

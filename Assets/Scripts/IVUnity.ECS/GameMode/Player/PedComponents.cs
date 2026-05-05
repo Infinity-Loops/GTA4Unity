@@ -56,6 +56,7 @@ namespace IVUnity.ECS.GameMode
     public struct PedCharacterControl : IComponentData
     {
         public float3 MoveVector;
+        public float MoveSpeed;
         public bool Jump;
     }
 
@@ -72,6 +73,7 @@ namespace IVUnity.ECS.GameMode
         public float2 MoveInput;
         public float2 CameraLookInput;
         public float CameraZoomInput;
+        public float MoveSpeed;
         public FixedInputEvent JumpPressed;
     }
 }

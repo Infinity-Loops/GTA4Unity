@@ -109,7 +109,8 @@ namespace IVUnity.ECS.GameMode
 
             if (body.IsGrounded)
             {
-                float3 targetVel = ctrl.MoveVector * cc.GroundMaxSpeed;
+                float speed = ctrl.MoveSpeed > 0f ? ctrl.MoveSpeed : cc.GroundMaxSpeed;
+                float3 targetVel = ctrl.MoveVector * speed;
                 CharacterControlUtilities.StandardGroundMove_Interpolated(
                     ref body.RelativeVelocity, targetVel,
                     cc.GroundedMovementSharpness, dt,

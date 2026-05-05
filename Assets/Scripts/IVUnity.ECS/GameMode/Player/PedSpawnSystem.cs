@@ -335,16 +335,21 @@ namespace IVUnity.ECS.GameMode
                 skeletonData.ParentIndices, skeletonData.RestPose,
                 skeletonData.RageRestPositions, skeletonData.RageRestRotations);
 
-            // Try walk for testing, fallback to idle
-            int clipIdx = animSystem.GetClipIndex("walk");
-            if (clipIdx < 0) clipIdx = animSystem.GetClipIndex("idle");
-            if (clipIdx < 0) clipIdx = 0;
+            int idleClip = animSystem.GetClipIndex("idle");
+            if (idleClip < 0) idleClip = animSystem.GetClipIndex("idle_a");
+            int walkClip = animSystem.GetClipIndex("walk");
+            int runClip = animSystem.GetClipIndex("run");
+            if (runClip < 0) runClip = animSystem.GetClipIndex("run");
+            int sprintClip = animSystem.GetClipIndex("sprint");
+            if (sprintClip < 0) sprintClip = runClip;
 
-            em.AddComponentData(meshParent, new PedAnimState
+            em.AddComponentData(meshParent, new PedMoveBlend
             {
-                CurrentClipIndex = clipIdx,
-                Time = 0,
-                Speed = 1f,
+                DesiredSpeed = 0f,
+                IdleClip = idleClip,
+                WalkClip = walkClip,
+                RunClip = runClip,
+                SprintClip = sprintClip,
             });
         }
 

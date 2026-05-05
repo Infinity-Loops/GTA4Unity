@@ -72,6 +72,7 @@ namespace IVUnity.ECS.GameMode
 
                 charCtrl.MoveVector = inputs.ValueRO.MoveInput.y * camForward + inputs.ValueRO.MoveInput.x * camRight;
                 charCtrl.MoveVector = MathUtilities.ClampToMaxLength(charCtrl.MoveVector, 1f);
+                charCtrl.MoveSpeed = inputs.ValueRO.MoveSpeed;
                 charCtrl.Jump = inputs.ValueRO.JumpPressed.IsSet(tick);
 
                 SystemAPI.SetComponent(player.ValueRO.ControlledCharacter, charCtrl);

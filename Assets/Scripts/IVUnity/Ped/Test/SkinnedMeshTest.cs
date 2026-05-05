@@ -62,62 +62,7 @@ namespace IVUnity.Ped
             var bindposes = new Matrix4x4[boneCount];
             for (int i = 0; i < boneCount; i++)
                 bindposes[i] = boneGOs[i].worldToLocalMatrix * root.transform.localToWorldMatrix;
-
-            // DEBUG: compare our bone rotation matrix vs skeleton's DefaultTransforms
-            if (skeleton.DefaultTransforms != null && skeleton.DefaultTransforms.Count >= boneCount)
-            {
-                int mismatches = 0;
-                for (int i = 0; i < System.Math.Min(boneCount, 10); i++)
-                {
-                    // Our bone's local rotation matrix (3x3 from Unity Transform)
-                    var ourMat = Matrix4x4.Rotate(boneGOs[i].localRotation);
-
-                    // Game's DefaultTransform (read as row-major Matrix44)
-                    var dt = skeleton.DefaultTransforms[i];
-
-                    // Convert game matrix from RAGE space to Unity space: P * M * P^T
-                    // P maps RAGE(x,y,z)->Unity(-x,z,-y)
-                    // P = [[-1,0,0],[0,0,1],[0,-1,0]]
-                    var gm = new Matrix4x4();
-                    gm.SetColumn(0, new Vector4(dt[0,0], dt[1,0], dt[2,0], 0));
-                    gm.SetColumn(1, new Vector4(dt[0,1], dt[1,1], dt[2,1], 0));
-                    gm.SetColumn(2, new Vector4(dt[0,2], dt[1,2], dt[2,2], 0));
-                    gm.SetColumn(3, new Vector4(0, 0, 0, 1));
-                    // P*M*P^T manually for 3x3:
-                    // P swaps and negates rows/cols based on (-x,z,-y) mapping
-                    var converted = new float[3,3];
-                    int[] map = {0, 2, 1}; // RAGE x→0, y→2, z→1 in Unity
-                    float[] sign = {-1, 1, -1}; // negate x and y(→z)
-                    for (int r = 0; r < 3; r++)
-                        for (int c = 0; c < 3; c++)
-                            converted[r, c] = sign[r] * sign[c] * gm[map[r], map[c]];
-
-                    float diffConverted = 0;
-                    for (int r = 0; r < 3; r++)
-                        for (int c = 0; c < 3; c++)
-                            diffConverted += Mathf.Abs(ourMat[r, c] - converted[r, c]);
-
-                    float diffRaw = 0;
-                    for (int r = 0; r < 3; r++)
-                        for (int c = 0; c < 3; c++)
-                            diffRaw += Mathf.Abs(ourMat[r, c] - gm[r, c]);
-
-                    string match;
-                    if (diffConverted < 0.1f) match = "CONVERTED_MATCH";
-                    else if (diffRaw < 0.1f) match = "RAW_MATCH";
-                    else match = $"MISMATCH(conv={diffConverted:F2},raw={diffRaw:F2})";
-
-                    if (diffConverted > 0.1f && diffRaw > 0.1f) mismatches++;
-
-                    var bone = skeleton.Bones[i];
-                    Debug.Log($"[SMR RotCheck] bone[{i}] {bone.Name}: {match}" +
-                        $"\n  Our:       [{ourMat[0,0]:F4},{ourMat[0,1]:F4},{ourMat[0,2]:F4}] [{ourMat[1,0]:F4},{ourMat[1,1]:F4},{ourMat[1,2]:F4}] [{ourMat[2,0]:F4},{ourMat[2,1]:F4},{ourMat[2,2]:F4}]" +
-                        $"\n  Game(raw): [{gm[0,0]:F4},{gm[0,1]:F4},{gm[0,2]:F4}] [{gm[1,0]:F4},{gm[1,1]:F4},{gm[1,2]:F4}] [{gm[2,0]:F4},{gm[2,1]:F4},{gm[2,2]:F4}]" +
-                        $"\n  Game(conv):[{converted[0,0]:F4},{converted[0,1]:F4},{converted[0,2]:F4}] [{converted[1,0]:F4},{converted[1,1]:F4},{converted[1,2]:F4}] [{converted[2,0]:F4},{converted[2,1]:F4},{converted[2,2]:F4}]");
-                }
-                Debug.Log($"[SMR RotCheck] {mismatches}/10 bones have rotation matrix mismatch");
-            }
-
+            
             // Add blend weight debug visualization
             root.AddComponent<BlendWeightDebug>();
 
@@ -162,7 +107,7 @@ namespace IVUnity.Ped
             }
 
             // Build legacy AnimationClip if we have animation data
-            if (false && rageClip != null && rageClip.BoneTracks.Length > 0)
+            if (rageClip != null && rageClip.BoneTracks.Length > 0)
             {
                 var boneIdToIndex = new Dictionary<ushort, int>();
                 for (int i = 0; i < boneCount; i++)
