@@ -21,6 +21,10 @@ public class GTADatLoader
     internal IPLLoader iplLoader;
     internal List<Water> waterPlanes = new();
     internal RealFileSystem root;
+    public Dictionary<string, IVUnity.Ped.PedVariation> pedVariations;
+    public Dictionary<string, IVUnity.Ped.AnimGroupEntry> animGroups;
+    public Dictionary<string, string> moveBlendFallbacks;
+    public Dictionary<string, IVUnity.Ped.MeleeAnimGroup> meleeAnimGroups;
 
     internal DatFileReader dat;
 
@@ -39,6 +43,8 @@ public class GTADatLoader
         await LoadIdes();
         await LoadWpls();
         LoadWater();
+        LoadPedVariations();
+        LoadAnimGroups();
 
         LoadingScreen.ResetProgress();
         Debug.Log("Finished loading.");
@@ -211,6 +217,28 @@ public class GTADatLoader
                 waterPlanes.Add(new Water(path));
             }
         }
+    }
+
+    private void LoadPedVariations()
+    {
+        string path = Path.Combine(gameDir, "common", "data", "pedVariations.dat");
+        pedVariations = IVUnity.Ped.PedVariationsLoader.Load(path);
+        Debug.Log($"[PedVariations] Loaded {pedVariations.Count} ped variation entries");
+    }
+
+    private void LoadAnimGroups()
+    {
+        string path = Path.Combine(gameDir, "common", "data", "animgrp.dat");
+        animGroups = IVUnity.Ped.AnimGroupLoader.Load(path);
+        Debug.Log($"[AnimGroups] Loaded {animGroups.Count} animation group entries");
+
+        string blendPath = Path.Combine(gameDir, "common", "data", "moveblend.dat");
+        moveBlendFallbacks = IVUnity.Ped.MoveBlendLoader.Load(blendPath);
+        Debug.Log($"[MoveBlend] Loaded {moveBlendFallbacks.Count} fallback entries");
+
+        string meleePath = Path.Combine(gameDir, "common", "data", "MeleeAnims.dat");
+        meleeAnimGroups = IVUnity.Ped.MeleeAnimsLoader.Load(meleePath);
+        Debug.Log($"[MeleeAnims] Loaded {meleeAnimGroups.Count} melee anim groups");
     }
 
     static void SearchFilesRecursively(string directory, string extension, List<string> results)

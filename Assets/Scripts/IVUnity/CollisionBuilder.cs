@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics;
+using IVUnity.ECS;
 using Unity.Transforms;
 using UnityEngine;
 using Collider = Unity.Physics.Collider;
@@ -37,6 +38,8 @@ namespace IVUnity
             }
 
             Debug.Log($"[CollisionBuilder] Parsing {wbnFiles.Count} .wbn files...");
+            LoadingScreen.SetupLoadingTarget(wbnFiles.Count);
+            LoadingScreen.AdvanceProgress("world collisions...", 0);
 
             // Phase 1: parse all .wbn on worker thread
             List<ParsedWbn> parsed = null;
@@ -51,8 +54,6 @@ namespace IVUnity
             while (!parseDone)
                 yield return null;
 
-            Debug.Log($"[CollisionBuilder] Parsed {parsed.Count} collision meshes. Building ECS colliders...");
-
             // Phase 2: create ECS collider entities using RageMeshCollider (fast path)
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null) yield break;
@@ -64,7 +65,11 @@ namespace IVUnity
             for (int i = 0; i < parsed.Count; i++)
             {
                 var p = parsed[i];
-                if (p.Vertices == null || p.Vertices.Length == 0) continue;
+                if (p.Vertices == null || p.Vertices.Length == 0)
+                {
+                    LoadingScreen.AdvanceProgress("world collisions...");
+                    continue;
+                }
 
                 var verts = new NativeArray<float3>(p.Vertices, Allocator.Temp);
                 var tris = new NativeArray<int3>(p.Triangles, Allocator.Temp);
@@ -90,6 +95,8 @@ namespace IVUnity
                     created++;
                 }
 
+                LoadingScreen.AdvanceProgress("world collisions...");
+
                 if (sw.ElapsedMilliseconds > 12)
                 {
                     sw.Restart();
@@ -98,6 +105,7 @@ namespace IVUnity
             }
 
             Debug.Log($"[CollisionBuilder] Done: {created} ECS colliders from {parsed.Count} files");
+            em.CreateEntity(typeof(CollisionReadyTag));
         }
 
         private static List<ParsedWbn> ParseAll(List<RageLib.FileSystem.Common.File> files)

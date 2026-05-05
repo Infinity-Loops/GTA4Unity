@@ -29,17 +29,16 @@ namespace RageLib.Models.Resource.Models
     public class Model : DATBase, IFileAccess
     {
         public PtrCollection<Geometry> Geometries { get; private set; }
-        
-        // grmModel fields
-        // These should actually be bytes but are read as ushorts (pairs)
-        private byte MatrixCount { get; set; }      // Number of bone matrices for skinning
-        private byte Flags { get; set; }            // Model flags (RELATIVE, RESOURCED, etc.)
-        private byte Type { get; set; }             // Model type identifier
-        private byte MatrixIndex { get; set; }      // Matrix index for hierarchical models
-        
-        private byte RenderMask { get; set; }       // Render bucket mask
-        private byte SkinFlag { get; set; }         // Skinning enabled flag
-        private ushort GeometryCount { get; set; }  // Number of geometries (matches Geometries.Count)
+
+
+        private byte MatrixCount { get; set; }
+        private byte Flags { get; set; }
+        private byte Type { get; set; }
+        private byte MatrixIndex { get; set; }
+
+        private byte RenderMask { get; set; }
+        private byte SkinFlag { get; set; }
+        private ushort GeometryCount { get; set; }
         
         // Bounding boxes: one per geometry + one for the whole model
         public SimpleArray<Vector4> BoundingBoxes { get; private set; }
@@ -58,7 +57,6 @@ namespace RageLib.Models.Resource.Models
             var boundingBoxesOffset = ResourceUtil.ReadOffset(br);
             var shaderMappingOffset = ResourceUtil.ReadOffset(br);
 
-            // Read as bytes instead of ushorts for proper field mapping
             MatrixCount = br.ReadByte();
             Flags = br.ReadByte();
             Type = br.ReadByte();

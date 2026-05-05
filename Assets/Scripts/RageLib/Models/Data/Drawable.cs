@@ -60,6 +60,7 @@ namespace RageLib.Models.Data
             {
                 AttachedTexture = drawableModel.ShaderGroup.TextureDictionary;
             }
+
         }
     }
 }

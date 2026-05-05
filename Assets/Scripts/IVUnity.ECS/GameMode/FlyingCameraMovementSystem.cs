@@ -6,7 +6,7 @@ using Unity.Transforms;
 
 namespace IVUnity.ECS.GameMode
 {
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateInGroup(typeof(SimulationSystemGroup), OrderFirst = true)]
     public partial class FlyingCameraMovementSystem : SystemBase
     {
         private EntityQuery flyingQuery;
@@ -55,10 +55,8 @@ namespace IVUnity.ECS.GameMode
 
             float speed = settings.MoveSpeed * input.SpeedMultiplier;
 
-            // Write desired velocity - PhysicsProxySystem applies it to PhysX and syncs position back
-            EntityManager.SetComponentData(e,  new PhysicsVelocity { Linear = moveDir * speed });
+            EntityManager.SetComponentData(e, new PhysicsVelocity { Linear = moveDir * speed, Angular = float3.zero });
 
-            // Update rotation (physics doesn't rotate the camera)
             transform.Rotation = rot;
             EntityManager.SetComponentData(e, transform);
             EntityManager.SetComponentData(e, settings);

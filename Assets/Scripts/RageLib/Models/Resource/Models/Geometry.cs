@@ -28,35 +28,28 @@ namespace RageLib.Models.Resource.Models
     // rage::grmGeometry / rage::grmGeometryQB
     public class Geometry : DATBase, IFileAccess
     {
-        // grmGeometry/grmGeometryQB fields
-        private uint Flags { get; set; }                   // Geometry flags
-        private uint BoneIds { get; set; }                 // Packed bone IDs for skinning
-        
-        // Vertex buffer info (follows pointer)
-        private uint VertexBufferUnk1 { get; set; }        // Vertex buffer related field
-        private uint VertexBufferUnk2 { get; set; }        // Vertex buffer related field
-        private uint VertexBufferUnk3 { get; set; }        // Vertex buffer related field
-        
-        // Index buffer info (follows pointer)
-        private uint IndexBufferUnk1 { get; set; }         // Index buffer related field
-        private uint IndexBufferUnk2 { get; set; }         // Index buffer related field
-        private uint IndexBufferUnk3 { get; set; }         // Index buffer related field
-        
-        public uint IndexCount { get; private set; }       // Total number of indices
-        public uint FaceCount { get; private set; }        // Number of triangles/faces
-        public ushort VertexCount { get; private set; }    // Number of vertices
-        public ushort PrimitiveType { get; private set; }  // RAGE_PRIMITIVE_TYPE (triangles, strips, etc.)
-        
-        private uint VertexDeclaration { get; set; }       // Vertex format declaration
-        public ushort VertexStride { get; private set; }   // Size of each vertex in bytes
-        private ushort BoneCount { get; set; }             // Number of bones affecting this geometry
-        
-        private uint MaterialId { get; set; }              // Material/shader ID
-        private uint DrawBucket { get; set; }              // Render bucket for sorting
-        private uint Reserved { get; set; }                // Reserved/padding
+        private uint Unknown1 { get; set; }
+        private uint Unknown2 { get; set; }
+        private uint Unknown3 { get; set; }
+        private uint Unknown4 { get; set; }
+        private uint Unknown5 { get; set; }
+        private uint Unknown6 { get; set; }
+        private uint Unknown7 { get; set; }
+        private uint Unknown8 { get; set; }
+        public uint IndexCount { get; private set; }
+        public uint FaceCount { get; private set; }
+        public ushort VertexCount { get; private set; }
+        public ushort PrimitiveType { get; private set; }
+        private uint MtxPalettePtr { get; set; }
+        public ushort VertexStride { get; private set; }
+        public ushort MtxCount { get; private set; }
+        private uint Unknown11 { get; set; }
+        private uint Unknown12 { get; set; }
+        private uint Unknown13 { get; set; }
 
         public VertexBuffer VertexBuffer { get; set; }
         public IndexBuffer IndexBuffer { get; set; }
+        public ushort[] MtxPalette { get; private set; }
 
         #region Implementation of IFileAccess
 
@@ -64,32 +57,32 @@ namespace RageLib.Models.Resource.Models
         {
             base.Read(br);
 
-            Flags = br.ReadUInt32();
-            BoneIds = br.ReadUInt32();
+            Unknown1 = br.ReadUInt32();
+            Unknown2 = br.ReadUInt32();
 
             var vertexBuffersOffset = ResourceUtil.ReadOffset(br);
-            VertexBufferUnk1 = br.ReadUInt32();
-            VertexBufferUnk2 = br.ReadUInt32();
-            VertexBufferUnk3 = br.ReadUInt32();
+            Unknown3 = br.ReadUInt32();
+            Unknown4 = br.ReadUInt32();
+            Unknown5 = br.ReadUInt32();
 
             var indexBuffersOffset = ResourceUtil.ReadOffset(br);
-            IndexBufferUnk1 = br.ReadUInt32();
-            IndexBufferUnk2 = br.ReadUInt32();
-            IndexBufferUnk3 = br.ReadUInt32();
+            Unknown6 = br.ReadUInt32();
+            Unknown7 = br.ReadUInt32();
+            Unknown8 = br.ReadUInt32();
 
             IndexCount = br.ReadUInt32();
             FaceCount = br.ReadUInt32();
             VertexCount = br.ReadUInt16();
             PrimitiveType = br.ReadUInt16();
 
-            VertexDeclaration = br.ReadUInt32();
+            MtxPalettePtr = br.ReadUInt32();
 
             VertexStride = br.ReadUInt16();
-            BoneCount = br.ReadUInt16();
+            MtxCount = br.ReadUInt16();
 
-            MaterialId = br.ReadUInt32();
-            DrawBucket = br.ReadUInt32();
-            Reserved = br.ReadUInt32();
+            Unknown11 = br.ReadUInt32();
+            Unknown12 = br.ReadUInt32();
+            Unknown13 = br.ReadUInt32();
 
             // Data
 
@@ -98,6 +91,18 @@ namespace RageLib.Models.Resource.Models
 
             br.BaseStream.Seek(indexBuffersOffset, SeekOrigin.Begin);
             IndexBuffer = new IndexBuffer(br);
+
+            if (MtxCount > 0 && MtxPalettePtr != 0 && (MtxPalettePtr >> 28) == 5)
+            {
+                uint paletteOffset = MtxPalettePtr & 0x0FFFFFFF;
+                using (new StreamContext(br))
+                {
+                    br.BaseStream.Seek(paletteOffset, SeekOrigin.Begin);
+                    MtxPalette = new ushort[MtxCount];
+                    for (int i = 0; i < MtxCount; i++)
+                        MtxPalette[i] = br.ReadUInt16();
+                }
+            }
         }
 
         public new void Write(BinaryWriter bw)

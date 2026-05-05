@@ -33,6 +33,7 @@ namespace RageLib.Models.Data
 
         public Vector4 Position { get; private set; }
         public Vector4 Rotation { get; private set; }
+        public Vector4 RotationQuat { get; private set; }
 
         public UnityEngine.Vector3 GetUnityPosition
         {
@@ -62,6 +63,7 @@ namespace RageLib.Models.Data
 
             Position = bone.Position;
             Rotation = bone.RotationEuler;
+            RotationQuat = bone.RotationQuaternion;
 
             AbsolutePosition = bone.AbsolutePosition;
             AbsoluteRotation = bone.AbsoluteRotationEuler;

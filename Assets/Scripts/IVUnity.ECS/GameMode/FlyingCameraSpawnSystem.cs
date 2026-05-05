@@ -15,6 +15,7 @@ namespace IVUnity.ECS.GameMode
 
         protected override void OnCreate()
         {
+            Enabled = false;
             RequireForUpdate<FocusPointData>();
         }
 

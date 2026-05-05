@@ -106,6 +106,7 @@ namespace IVUnity.ECS
             TryConfigurePromotion(world);
             TryConfigureUnload(world);
             TryConfigureEviction(world);
+            TryConfigurePedSpawn(world);
 
             // Hand the UI transition to InitialLoadGateSystem — it keeps the loading screen
             // up until the initial batch of entities has actually promoted to Loaded, then
@@ -160,6 +161,11 @@ namespace IVUnity.ECS
         {
             var s = world.GetExistingSystemManaged<MeshCacheEvictionSystem>();
             if (s != null) s.Configure(MeshCache);
+        }
+        private void TryConfigurePedSpawn(World world)
+        {
+            var s = world.GetExistingSystemManaged<GameMode.PedSpawnSystem>();
+            if (s != null) s.Configure(gameLoader.gameFiles, gameLoader.pedVariations, gameLoader.ideLoader.pedsDict, gameLoader.moveBlendFallbacks);
         }
 
         private void OnDestroy()

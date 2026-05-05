@@ -19,6 +19,7 @@ public enum IDEReader : int
     iTREE = 10,
     iTXDP = 11,
     iWEAP = 12,
+    iAGRPS = 13,
 }
 
 /// <summary>
@@ -51,6 +52,8 @@ public class IDE
     public List<Item_AMAT> items_amat = new();
     public List<Item_TXDP> items_txdp = new();
     public List<Item_CARS> items_cars = new();
+    public List<Item_PEDS> items_peds = new();
+    public List<Item_AGRPS> items_agrps = new();
 
     public IDE(string fileName)
     {
@@ -75,6 +78,7 @@ public class IDE
                 else if (line.StartsWith("tree")) readItem = IDEReader.iTREE;
                 else if (line.StartsWith("txdp")) readItem = IDEReader.iTXDP;
                 else if (line.StartsWith("weap")) readItem = IDEReader.iWEAP;
+                else if (line.StartsWith("agrps")) readItem = IDEReader.iAGRPS;
                 continue;
             }
 
@@ -96,12 +100,13 @@ public class IDE
                 IDEReader.iHIER => new Item_HIER(),
                 IDEReader.iOBJS => Track(items_objs, new Item_OBJS()),
                 IDEReader.iPATH => new Item_PATH(),
-                IDEReader.iPEDS => new Item_PEDS(),
+                IDEReader.iPEDS => Track(items_peds, new Item_PEDS()),
                 IDEReader.iTANM => new Item_TANM(),
                 IDEReader.iTOBJ => Track(items_tobj, new Item_TOBJ()),
                 IDEReader.iTREE => new Item_TREE(),
                 IDEReader.iTXDP => Track(items_txdp, new Item_TXDP()),
                 IDEReader.iWEAP => new Item_WEAP(),
+                IDEReader.iAGRPS => Track(items_agrps, new Item_AGRPS()),
                 _               => null,
             };
             if (item == null) continue;

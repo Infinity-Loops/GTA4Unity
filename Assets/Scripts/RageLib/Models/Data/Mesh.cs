@@ -22,8 +22,10 @@ namespace RageLib.Models.Data
         public byte[] IndexData { get; private set; }
 
         public int MaterialIndex { get; set; }
+        public int[] BoneIndexRemap { get; set; }
 
         private int posOffset = -1, normalOffset = -1, uvOffset = -1, colorOffset = -1;
+        private int blendIndicesOffset = -1, blendWeightsOffset = -1;
 
         internal Mesh(Resource.Models.Geometry info)
         {
@@ -34,6 +36,13 @@ namespace RageLib.Models.Data
             VertexCount = info.VertexCount;
             VertexStride = info.VertexStride;
             VertexData = info.VertexBuffer.RawData;
+
+            if (info.MtxPalette != null)
+            {
+                BoneIndexRemap = new int[info.MtxPalette.Length];
+                for (int i = 0; i < info.MtxPalette.Length; i++)
+                    BoneIndexRemap[i] = info.MtxPalette[i];
+            }
 
             IndexCount = (int) info.IndexCount;
             IndexData = info.IndexBuffer.RawData;
@@ -62,6 +71,10 @@ namespace RageLib.Models.Data
                         break;
                     case VertexElementUsage.BlendIndices:
                         VertexHasBlendInfo = true;
+                        blendIndicesOffset = element.Offset;
+                        break;
+                    case VertexElementUsage.BlendWeight:
+                        blendWeightsOffset = element.Offset;
                         break;
                 }
             }
@@ -103,6 +116,8 @@ namespace RageLib.Models.Data
             bool hasNormal = normalOffset >= 0;
             bool hasUV = uvOffset >= 0;
             bool hasColor = colorOffset >= 0;
+            bool hasBlendIdx = blendIndicesOffset >= 0;
+            bool hasBlendWgt = blendWeightsOffset >= 0;
 
             fixed (byte* basePtr = data)
             {
@@ -133,6 +148,11 @@ namespace RageLib.Models.Data
                     {
                         v.DiffuseColor = *(uint*)(b + colorOffset);
                     }
+
+                    if (hasBlendIdx)
+                        v.BlendIndicesPacked = *(uint*)(b + blendIndicesOffset);
+                    if (hasBlendWgt)
+                        v.BlendWeightsPacked = *(uint*)(b + blendWeightsOffset);
 
                     vertices[i] = v;
                 }

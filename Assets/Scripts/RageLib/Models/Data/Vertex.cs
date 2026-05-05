@@ -13,6 +13,8 @@ namespace RageLib.Models.Data
         // Diffuse vertex color packed as ARGB (RAGE/D3D9 convention). Decoded to a Color32
         // in MeshDecodeJob — terrain shaders read RGB as per-vertex layer-blend weights.
         public uint DiffuseColor;
+        public uint BlendIndicesPacked;
+        public uint BlendWeightsPacked;
 
         public static implicit operator CleanVertex(Vertex vertex)
         {

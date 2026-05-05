@@ -129,6 +129,7 @@ namespace RageLib.Models
                 mesh3D.normals = work.HasNormals ? work.DecodeJob.Normals.ToArray() : null;
                 mesh3D.textureCoordinates = work.HasTexCoords ? work.DecodeJob.TextureCoordinates.ToArray() : null;
                 mesh3D.colors = work.HasColors ? work.DecodeJob.Colors.ToArray() : null;
+                mesh3D.boneWeights = work.HasBlendInfo ? work.DecodeJob.BoneWeights.ToArray() : null;
                 mesh3D.triangleIndices = work.IndexJob.TriangleIndices.AsArray().ToArray();
 
                 work.DecodeJob.Vertices.Dispose();
@@ -136,6 +137,8 @@ namespace RageLib.Models
                 work.DecodeJob.Normals.Dispose();
                 work.DecodeJob.TextureCoordinates.Dispose();
                 work.DecodeJob.Colors.Dispose();
+                work.DecodeJob.BoneWeights.Dispose();
+                work.DecodeJob.BoneRemap.Dispose();
                 work.IndexJob.Indices.Dispose();
                 work.IndexJob.TriangleIndices.Dispose();
             }
@@ -153,6 +156,7 @@ namespace RageLib.Models
             public bool HasNormals;
             public bool HasTexCoords;
             public bool HasColors;
+            public bool HasBlendInfo;
             // Tree location
             public int ModelIndex;
             public int GeometryIndex;
@@ -173,6 +177,10 @@ namespace RageLib.Models
                         var decoded = mesh.DecodeUnityBurstVertexData();
                         var vertexData = new NativeArray<CleanVertex>(decoded, Allocator.TempJob);
 
+                        var boneRemap = mesh.BoneIndexRemap != null
+                            ? new NativeArray<int>(mesh.BoneIndexRemap, Allocator.TempJob)
+                            : new NativeArray<int>(0, Allocator.TempJob);
+
                         var decodeJob = new MeshDecodeJob
                         {
                             Vertices = vertexData,
@@ -180,9 +188,12 @@ namespace RageLib.Models
                             Normals = new NativeArray<Vector3>(vertexData.Length, Allocator.TempJob),
                             TextureCoordinates = new NativeArray<Vector2>(vertexData.Length, Allocator.TempJob),
                             Colors = new NativeArray<Color32>(vertexData.Length, Allocator.TempJob),
+                            BoneWeights = new NativeArray<BoneWeight>(vertexData.Length, Allocator.TempJob),
+                            BoneRemap = boneRemap,
                             HasNormals = mesh.VertexHasNormal,
                             HasTextureCoordinates = mesh.VertexHasTexture,
                             HasColors = mesh.VertexHasColor,
+                            HasBlendInfo = mesh.VertexHasBlendInfo,
                         };
 
                         var indexJob = new MeshDecodeIndexJob
@@ -201,6 +212,7 @@ namespace RageLib.Models
                             HasNormals = mesh.VertexHasNormal,
                             HasTexCoords = mesh.VertexHasTexture,
                             HasColors = mesh.VertexHasColor,
+                            HasBlendInfo = mesh.VertexHasBlendInfo,
                             ModelIndex = mi,
                             GeometryIndex = gi,
                             MeshIndex = meshIdx,
@@ -342,16 +354,21 @@ namespace RageLib.Models
         private struct MeshDecodeJob : IJob
         {
             [ReadOnly] public NativeArray<CleanVertex> Vertices;
+            [ReadOnly] public NativeArray<int> BoneRemap;
             public NativeArray<Vector3> Positions;
             public NativeArray<Vector3> Normals;
             public NativeArray<Vector2> TextureCoordinates;
             public NativeArray<Color32> Colors;
+            public NativeArray<BoneWeight> BoneWeights;
             public bool HasNormals;
             public bool HasTextureCoordinates;
             public bool HasColors;
+            public bool HasBlendInfo;
 
             public void Execute()
             {
+                bool hasRemap = BoneRemap.Length > 0;
+
                 for (int i = 0; i < Vertices.Length; i++)
                 {
                     var p = Vertices[i].Position;
@@ -372,6 +389,36 @@ namespace RageLib.Models
                         byte r = (byte)((argb >> 16) & 0xFF);
                         byte a = (byte)((argb >> 24) & 0xFF);
                         Colors[i] = new Color32(r, g, b, a);
+                    }
+                    if (HasBlendInfo)
+                    {
+                        uint idx = Vertices[i].BlendIndicesPacked;
+                        uint wgt = Vertices[i].BlendWeightsPacked;
+
+                        int i0 = (int)((idx >> 16) & 0xFF);
+                        int i1 = (int)((idx >> 8) & 0xFF);
+                        int i2 = (int)(idx & 0xFF);
+                        int i3 = (int)((idx >> 24) & 0xFF);
+
+                        if (hasRemap)
+                        {
+                            if (i0 < BoneRemap.Length) i0 = BoneRemap[i0];
+                            if (i1 < BoneRemap.Length) i1 = BoneRemap[i1];
+                            if (i2 < BoneRemap.Length) i2 = BoneRemap[i2];
+                            if (i3 < BoneRemap.Length) i3 = BoneRemap[i3];
+                        }
+
+                        BoneWeights[i] = new BoneWeight
+                        {
+                            boneIndex0 = i0,
+                            boneIndex1 = i1,
+                            boneIndex2 = i2,
+                            boneIndex3 = i3,
+                            weight0 = ((wgt >> 16) & 0xFF) / 255f,
+                            weight1 = ((wgt >> 8) & 0xFF) / 255f,
+                            weight2 = (wgt & 0xFF) / 255f,
+                            weight3 = ((wgt >> 24) & 0xFF) / 255f,
+                        };
                     }
                 }
             }
