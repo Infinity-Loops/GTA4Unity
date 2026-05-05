@@ -102,7 +102,7 @@ namespace IVUnity.ECS.GameMode
             // Load animation WAD and configure playback
             SetupAnimation(em, meshParent, pedName, skeletonData);
 
-            // BuildSkinnedMeshTest(pedName, skeletonData, startPos);
+            //BuildSkinnedMeshTest(pedName, skeletonData, startPos);
 
             Debug.Log($"[PedSpawn] Ped spawned at {startPos}");
         }

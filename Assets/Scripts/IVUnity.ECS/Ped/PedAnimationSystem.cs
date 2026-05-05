@@ -55,6 +55,8 @@ namespace IVUnity.ECS.Ped
             return -1;
         }
         private SkeletonDebugGizmo _debugGizmo;
+        private HashSet<int> _bonesWithTracks;
+        private PedTwistSolver _twistSolver;
 
         public void Configure(AnimationClip[] clips, Dictionary<string, int> clipsByName,
             Entity[] boneEntities, ushort[] boneIds, int[] parentIndices,
@@ -73,12 +75,27 @@ namespace IVUnity.ECS.Ped
             for (int i = 0; i < boneIds.Length; i++)
                 _boneIdToEntityIndex[boneIds[i]] = i;
 
+            // Collect all bone indices that have at least one track across all clips
+            _bonesWithTracks = new HashSet<int>();
+            foreach (var clip in clips)
+            {
+                if (clip == null) continue;
+                foreach (var bt in clip.BoneTracks)
+                {
+                    if (_boneIdToEntityIndex.TryGetValue(bt.BoneId, out int bi))
+                        _bonesWithTracks.Add(bi);
+                }
+            }
+
+            _twistSolver = new PedTwistSolver();
+            _twistSolver.Configure(_boneIdToEntityIndex, rageRestRot);
+
             var go = new UnityEngine.GameObject("SkeletonDebug");
             _debugGizmo = go.AddComponent<SkeletonDebugGizmo>();
             _debugGizmo.ParentIndices = parentIndices;
             _debugGizmo.BonePositions = new UnityEngine.Vector3[_boneCount];
 
-            Debug.Log($"[PedAnim] Configured: {clips.Length} clips, {_boneIdToEntityIndex.Count} bone mappings");
+            Debug.Log($"[PedAnim] Configured: {clips.Length} clips, {_boneIdToEntityIndex.Count} bone mappings, {_bonesWithTracks.Count} bones with tracks");
         }
 
 
@@ -191,6 +208,8 @@ namespace IVUnity.ECS.Ped
                     rageWorldRot[i] = rageLocalRot[i];
                 }
             }
+
+            _twistSolver.Solve(rageLocalRot, rageWorldPos, rageWorldRot, _parentIndices);
 
             var skinMatrices = EntityManager.GetBuffer<Unity.Deformations.SkinMatrix>(entity);
             var bindPoses = EntityManager.GetBuffer<SkinnedMeshBindPose>(entity);
