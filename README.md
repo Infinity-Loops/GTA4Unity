@@ -76,6 +76,8 @@ RAGE stores entity quaternions with negated XYZ relative to the mathematical rot
 
 For MLO interior props, `RageCoordinates.Compose()` composes parent (building) and child (prop) transforms in RAGE space before converting the result to Unity. The `RotationInternal()` variant handles quaternions already in mathematical form (from Euler angles or composition results).
 
+**Ped forward direction**: RAGE Y+ (forward) maps to Unity `(0, 0, -1)` via `Position(-x, z, -y)`. The ped model's visual forward in Unity space is -Z. The entity's +Z is the character controller's facing, but the skeleton's forward is the opposite. This matters for procedural systems like knee IK hints that need the model's facing direction rather than the entity's.
+
 ### ECS streaming pipeline
 
 The world contains 200K+ entities. The streaming pipeline manages which are visible:

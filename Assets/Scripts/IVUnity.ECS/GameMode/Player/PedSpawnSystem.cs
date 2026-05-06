@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using IVUnity.ECS.Ped;
+using IVUnity.ECS.Ped.Legs;
 using IVUnity.Ped;
 using IVUnity.Resolver;
 using RageLib.Models;
@@ -341,6 +342,7 @@ namespace IVUnity.ECS.GameMode
                 DesiredSpeed = 0f,
                 DirectionAngle = 0f,
             });
+            em.AddComponentData(meshParent, PedLegsSettings.Default);
         }
 
         private string FindRandomMPedName()
@@ -356,7 +358,9 @@ namespace IVUnity.ECS.GameMode
                 if (!name.StartsWith("M_", System.StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (!gameFiles.ContainsKey(name.ToLowerInvariant() + ".wdd") ||
+                var lower = name.ToLowerInvariant();
+                if (!gameFiles.ContainsKey(lower + ".wdd") ||
+                    !gameFiles.ContainsKey(lower + ".wft") ||
                     !pedVariations.ContainsKey(name))
                     continue;
 

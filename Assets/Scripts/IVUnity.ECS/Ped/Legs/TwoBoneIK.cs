@@ -2,20 +2,20 @@ using Unity.Mathematics;
 
 namespace IVUnity.ECS.Ped.Legs
 {
-    /// <summary>
-    /// Two-bone IK solver (thigh → knee → ankle).
-    /// </summary>
     public static class TwoBoneIK
     {
+        public const float DefaultMaxStretch = 0.99f;
+
         public static void Solve(
             float3 rootPos, quaternion rootRot,
             float3 midPos, quaternion midRot,
             float3 endPos, quaternion endRot,
-            float3 targetPos, float3 hintDir,
+            float3 targetPos, float3 hintPos,
             float weight,
             out float3 outRootPos, out quaternion outRootRot,
             out float3 outMidPos, out quaternion outMidRot,
-            out float3 outEndPos, out quaternion outEndRot)
+            out float3 outEndPos, out quaternion outEndRot,
+            float maxStretch = DefaultMaxStretch)
         {
             outRootPos = rootPos;
             outRootRot = rootRot;
@@ -26,16 +26,15 @@ namespace IVUnity.ECS.Ped.Legs
 
             if (weight < 0.001f) return;
 
-            float upperLen = math.length(midPos - rootPos);
-            float lowerLen = math.length(endPos - midPos);
+            float upperLenSq = math.lengthsq(midPos - rootPos);
+            float lowerLenSq = math.lengthsq(endPos - midPos);
+            float upperLen = math.sqrt(upperLenSq);
+            float lowerLen = math.sqrt(lowerLenSq);
             float totalLen = upperLen + lowerLen;
 
             float3 toTarget = targetPos - rootPos;
-            float targetDist = math.length(toTarget);
-
-            // Clamp to prevent hyperextension
-            if (targetDist > totalLen * 0.9999f)
-                targetDist = totalLen * 0.9999f;
+            float targetDistSq = math.lengthsq(toTarget);
+            float targetDist = math.sqrt(targetDistSq);
 
             if (targetDist < 0.001f)
             {
@@ -43,32 +42,40 @@ namespace IVUnity.ECS.Ped.Legs
                 return;
             }
 
-            // Law of cosines for knee angle
-            float cosAngle = (upperLen * upperLen + lowerLen * lowerLen - targetDist * targetDist)
-                             / (2f * upperLen * lowerLen);
-            cosAngle = math.clamp(cosAngle, -1f, 1f);
+            // Stretch clamping — clamp IK target and fade weight when overextended
+            float stretch = targetDist / totalLen;
+            if (stretch > maxStretch)
+            {
+                targetDist = totalLen * maxStretch;
+                targetDistSq = targetDist * targetDist;
+                toTarget = math.normalizesafe(toTarget) * targetDist;
+                targetPos = rootPos + toTarget;
+
+                float stretchDiff = math.saturate((stretch - maxStretch) * 3f);
+                weight *= (1f - stretchDiff);
+                if (weight < 0.001f) return;
+            }
 
             // Direction from root to target
             float3 targetDir = toTarget / targetDist;
 
-            // Compute plane normal (hint determines which way knee bends)
-            float3 rawHint = hintDir - rootPos;
-            float3 planeNormal = math.normalizesafe(math.cross(targetDir, math.normalizesafe(rawHint - targetDir * math.dot(rawHint, targetDir))));
-            if (math.lengthsq(planeNormal) < 0.001f)
-                planeNormal = math.normalizesafe(math.cross(targetDir, new float3(0, 1, 0)));
+            // Bend plane normal from hint position (same as original's CalculateElbowNormalToPosition)
+            float3 bendNormal = math.cross(hintPos - rootPos, targetPos - rootPos);
+            if (math.lengthsq(bendNormal) < 0.0001f)
+                bendNormal = math.cross(midPos - rootPos, targetPos - rootPos);
+            if (math.lengthsq(bendNormal) < 0.0001f)
+                bendNormal = math.cross(targetDir, new float3(0, 1, 0));
+            bendNormal = math.normalizesafe(bendNormal);
 
-            // Upper bone angle from law of cosines
-            float cosUpper = (upperLen * upperLen + targetDist * targetDist - lowerLen * lowerLen)
-                             / (2f * upperLen * targetDist);
-            cosUpper = math.clamp(cosUpper, -1f, 1f);
-            float upperAngle = math.acos(cosUpper);
+            // Perpendicular up within the bend plane
+            float3 perpUp = math.normalizesafe(math.cross(targetDir, bendNormal));
 
-            // Rotate target direction by upper angle around plane normal to get mid position
-            quaternion upperRotQ = quaternion.AxisAngle(planeNormal, upperAngle);
-            float3 upperDir = math.mul(upperRotQ, targetDir);
-            float3 newMid = rootPos + upperDir * upperLen;
+            // Law of cosines — direct Cartesian (avoids acos, matches original)
+            float forwardLen = (targetDistSq + upperLenSq - lowerLenSq) / (2f * targetDist);
+            float upLen = math.sqrt(math.max(upperLenSq - forwardLen * forwardLen, 0f));
 
-            // End position
+            // Mid position from the orientation direction
+            float3 newMid = rootPos + targetDir * forwardLen + perpUp * upLen;
             float3 newEnd = targetPos;
 
             // Apply weight
@@ -76,7 +83,7 @@ namespace IVUnity.ECS.Ped.Legs
             outEndPos = math.lerp(endPos, newEnd, weight);
             outRootPos = rootPos;
 
-            // Compute rotations
+            // Rotation deltas
             float3 origUpperDir = math.normalizesafe(midPos - rootPos);
             float3 newUpperDir = math.normalizesafe(outMidPos - rootPos);
             if (math.lengthsq(origUpperDir) > 0.001f && math.lengthsq(newUpperDir) > 0.001f)
