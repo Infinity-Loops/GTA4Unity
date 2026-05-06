@@ -459,19 +459,28 @@ namespace IVUnity.ECS.GameMode
 
             foreach (var slot in defaultSlots)
             {
-                var candidates = PedVariation.GetDrawableCandidates(slot.Slot, slot.GeometryIndex);
                 int entryIdx = -1;
                 string matchedName = null;
 
-                foreach (string candidate in candidates)
+                // Try the requested geometry index first, fall back to 0 if not found
+                int[] tryIndices = slot.GeometryIndex != 0
+                    ? new[] { slot.GeometryIndex, 0 }
+                    : new[] { 0 };
+
+                foreach (int gi in tryIndices)
                 {
-                    uint h = RageLib.Common.Hasher.Hash(candidate);
-                    if (hashToIndex.TryGetValue(h, out int idx))
+                    var candidates = PedVariation.GetDrawableCandidates(slot.Slot, gi);
+                    foreach (string candidate in candidates)
                     {
-                        entryIdx = idx;
-                        matchedName = candidate;
-                        break;
+                        uint h = RageLib.Common.Hasher.Hash(candidate);
+                        if (hashToIndex.TryGetValue(h, out int idx))
+                        {
+                            entryIdx = idx;
+                            matchedName = candidate;
+                            break;
+                        }
                     }
+                    if (entryIdx >= 0) break;
                 }
 
                 if (entryIdx < 0)
