@@ -1,10 +1,12 @@
 using System.Collections.Generic;
 using System.IO;
 using IVUnity.ECS.GameMode;
+using IVUnity.ECS.Ped.Legs;
 using IVUnity.Ped;
 using RageLib.Animation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
 using AnimationClip = RageLib.Animation.AnimationClip;
@@ -45,6 +47,7 @@ namespace IVUnity.ECS.Ped
         private SkeletonDebugGizmo _debugGizmo;
         private PedTwistSolver _twistSolver;
         private PedMoveBlendTree _blendTree;
+        private PedLegsProcessor _legsProcessor;
         private float[] _clipTimes;
 
         public void Configure(AnimationClip[] clips, Dictionary<string, int> clipsByName,
@@ -71,12 +74,46 @@ namespace IVUnity.ECS.Ped
             _blendTree = new PedMoveBlendTree();
             _blendTree.Configure(clipsByName);
 
+            var legSetups = new List<PedLegSetup>();
+            TryAddLeg(legSetups, (ushort)PedBoneId.L_Thigh, (ushort)PedBoneId.L_Calf, (ushort)PedBoneId.L_Foot);
+            TryAddLeg(legSetups, (ushort)PedBoneId.R_Thigh, (ushort)PedBoneId.R_Calf, (ushort)PedBoneId.R_Foot);
+            if (legSetups.Count > 0)
+            {
+                _legsProcessor = new PedLegsProcessor();
+                // Convert rest positions from RAGE space to Unity space for initialization
+                var initWorldPos = new Vector3[_boneCount];
+                var initWorldRot = new quaternion[_boneCount];
+                for (int i = 0; i < _boneCount; i++)
+                {
+                    initWorldPos[i] = RageCoordinates.Position(new Vector3(rageRestPos[i].x, rageRestPos[i].y, rageRestPos[i].z));
+                    initWorldRot[i] = (quaternion)RageCoordinates.RotationInternal(new Quaternion(rageRestRot[i].value.x, rageRestRot[i].value.y, rageRestRot[i].value.z, rageRestRot[i].value.w));
+                }
+                _legsProcessor.Initialize(initWorldPos, initWorldRot, parentIndices,
+                    float3.zero, quaternion.identity, legSetups.ToArray());
+                Debug.Log($"[PedAnim] Legs processor initialized with {legSetups.Count} legs");
+            }
+
             var go = new UnityEngine.GameObject("SkeletonDebug");
             _debugGizmo = go.AddComponent<SkeletonDebugGizmo>();
             _debugGizmo.ParentIndices = parentIndices;
             _debugGizmo.BonePositions = new UnityEngine.Vector3[_boneCount];
 
             Debug.Log($"[PedAnim] Configured: {clips.Length} clips, {_boneIdToEntityIndex.Count} bone mappings");
+        }
+
+        private void TryAddLeg(List<PedLegSetup> setups, ushort thighId, ushort calfId, ushort footId)
+        {
+            if (_boneIdToEntityIndex.TryGetValue(thighId, out int thighIdx) &&
+                _boneIdToEntityIndex.TryGetValue(calfId, out int calfIdx) &&
+                _boneIdToEntityIndex.TryGetValue(footId, out int footIdx))
+            {
+                setups.Add(new PedLegSetup
+                {
+                    ThighBoneIndex = thighIdx,
+                    KneeBoneIndex = calfIdx,
+                    AnkleBoneIndex = footIdx
+                });
+            }
         }
 
         public int GetClipIndex(string name)
@@ -89,6 +126,7 @@ namespace IVUnity.ECS.Ped
         protected override void OnCreate()
         {
             RequireForUpdate<PedMoveBlend>();
+            RequireForUpdate<PhysicsWorldSingleton>();
         }
 
         protected override void OnUpdate()
@@ -198,19 +236,51 @@ namespace IVUnity.ECS.Ped
 
             _twistSolver.Solve(rageLocalRot, rageWorldPos, rageWorldRot, _parentIndices);
 
+            // Convert to Unity local space (relative to mesh root, no world transform yet)
+            var unityLocalPos = new Vector3[_boneCount];
+            var unityLocalRot = new Quaternion[_boneCount];
+            for (int i = 0; i < _boneCount; i++)
+            {
+                unityLocalPos[i] = RageCoordinates.Position(rageWorldPos[i]);
+                unityLocalRot[i] = RageCoordinates.RotationInternal(rageWorldRot[i]);
+            }
 
+            // Get mesh root world transform
+            var rootRef2 = EntityManager.GetComponentData<SkinnedMeshRootEntity>(entity);
+            float3 rootWorldPos = float3.zero;
+            quaternion rootWorldRot = quaternion.identity;
+            if (EntityManager.HasComponent<LocalToWorld>(rootRef2.Value))
+            {
+                var ltw = EntityManager.GetComponentData<LocalToWorld>(rootRef2.Value);
+                rootWorldPos = ltw.Position;
+                rootWorldRot = ltw.Rotation;
+            }
+
+            // Transform to Unity world space
+            var unityWorldPos = new Vector3[_boneCount];
+            var unityWorldRot = new Quaternion[_boneCount];
+            for (int i = 0; i < _boneCount; i++)
+            {
+                unityWorldPos[i] = (Vector3)rootWorldPos + (Quaternion)rootWorldRot * unityLocalPos[i];
+                unityWorldRot[i] = (Quaternion)rootWorldRot * unityLocalRot[i];
+            }
+
+            // Legs IK — disabled until coordinate mapping is validated
+            // if (_legsProcessor != null && _legsProcessor.IsInitialized)
+            // {
+            // }
+
+            // Compute skin matrices from Unity local-space (relative to mesh root)
             var skinMatrices = EntityManager.GetBuffer<Unity.Deformations.SkinMatrix>(entity);
             var bindPoses = EntityManager.GetBuffer<SkinnedMeshBindPose>(entity);
 
             for (int i = 0; i < _boneCount && i < skinMatrices.Length && i < bindPoses.Length; i++)
             {
-                var uPos = RageCoordinates.Position(rageWorldPos[i]);
-                var uRot = RageCoordinates.RotationInternal(rageWorldRot[i]);
-                float4x4 worldMat = float4x4.TRS(
-                    new float3(uPos.x, uPos.y, uPos.z),
-                    new quaternion(uRot.x, uRot.y, uRot.z, uRot.w), 1f);
+                float4x4 boneMat = float4x4.TRS(
+                    (float3)unityLocalPos[i],
+                    (quaternion)unityLocalRot[i], 1f);
 
-                float4x4 skinMat = math.mul(worldMat, bindPoses[i].Value);
+                float4x4 skinMat = math.mul(boneMat, bindPoses[i].Value);
                 skinMatrices[i] = new Unity.Deformations.SkinMatrix
                 {
                     Value = new float3x4(skinMat.c0.xyz, skinMat.c1.xyz, skinMat.c2.xyz, skinMat.c3.xyz)
@@ -222,15 +292,10 @@ namespace IVUnity.ECS.Ped
 
             if (_debugGizmo != null)
             {
-                var rootRef = EntityManager.GetComponentData<SkinnedMeshRootEntity>(entity);
-                if (EntityManager.HasComponent<LocalToWorld>(rootRef.Value))
-                {
-                    var ltw = EntityManager.GetComponentData<LocalToWorld>(rootRef.Value);
-                    _debugGizmo.Offset = ltw.Position;
-                    _debugGizmo.Rotation = ltw.Rotation;
-                }
+                _debugGizmo.Offset = rootWorldPos;
+                _debugGizmo.Rotation = rootWorldRot;
                 for (int i = 0; i < _boneCount; i++)
-                    _debugGizmo.BonePositions[i] = RageCoordinates.Position(rageWorldPos[i]);
+                    _debugGizmo.BonePositions[i] = unityLocalPos[i];
             }
         }
 

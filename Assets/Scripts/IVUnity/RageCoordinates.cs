@@ -42,6 +42,18 @@ public static class RageCoordinates
         return new float3(-x, z, -y);
     }
 
+    /// <summary>Convert a Unity position back to RAGE.</summary>
+    public static Vector3 InversePosition(Vector3 unity)
+    {
+        return new Vector3(-unity.x, -unity.z, unity.y);
+    }
+
+    /// <summary>Convert a Unity Quaternion back to a RAGE internal quaternion.</summary>
+    public static Quaternion InverseRotationInternal(Quaternion unity)
+    {
+        return new Quaternion(unity.x, unity.z, -unity.y, unity.w);
+    }
+
     /// <summary>
     /// Compose a parent + child transform in RAGE space and return Unity world values.
     /// Both rotations are in RAGE stored format.
