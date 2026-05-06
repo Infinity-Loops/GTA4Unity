@@ -75,7 +75,7 @@ namespace IVUnity
                 var tris = new NativeArray<int3>(p.Triangles, Allocator.Temp);
                 var quads = new NativeArray<int4>(p.Quads, Allocator.Temp);
 
-                var blob = IVUnity.Physics.RageMeshCollider.Create(verts, tris, quads);
+                var blob = IVUnity.Physics.RageMeshCollider.Create(verts, tris, quads, IVUnity.ECS.PhysicsLayers.EnvironmentFilter);
 
                 verts.Dispose();
                 tris.Dispose();

@@ -63,7 +63,7 @@ Shader "GTA IV/gta_trees"
                 float3 axis = normalize(cross(pos, float3(0, 0, 1)) + 1e-5);
 
                 // Amplitude: dist * 0.005 + 0.01 (engine c4.x, c4.y)
-                float amplitude = dist * 0.005 + 0.01;
+                float amplitude = dist * 0.005 + 0.01 * 1.1;
 
                 // Phase: each vertex oscillates at different phase based on distance
                 // Engine: dist * windSpeed * (1/2pi * 0.2) + 0.5, then *2pi - pi

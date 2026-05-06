@@ -54,6 +54,12 @@ namespace IVUnity.ECS
                 .Build(EntityManager);
         }
 
+        protected override void OnDestroy()
+        {
+            if (hasPendingDormant) { pendingDormantJob.Complete(); pendingDormantEcb.Dispose(); }
+            if (hasPendingLoaded) { pendingLoadedJob.Complete(); pendingLoadedEcb.Dispose(); }
+        }
+
         private float nextDiagTime;
 
         protected override void OnUpdate()

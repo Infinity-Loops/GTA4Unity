@@ -126,7 +126,7 @@ namespace IVUnity.ECS.Ped
         protected override void OnCreate()
         {
             RequireForUpdate<PedMoveBlend>();
-            RequireForUpdate<PhysicsWorldSingleton>();
+            //RequireForUpdate<PhysicsWorldSingleton>();
         }
 
         protected override void OnUpdate()
@@ -206,9 +206,9 @@ namespace IVUnity.ECS.Ped
                     float3 p0 = clip.MoverPositions[f0];
                     float3 p1 = clip.MoverPositions[math.min(f1, clip.MoverPositions.Length - 1)];
                     float3 moverPos = math.lerp(p0, p1, frac);
-                    // Use relative Y (subtract frame 0 baseline) to prevent floating between clips
+                    // Subtract frame 0 vertical baseline (Z is up in RAGE space)
                     float3 baselinePos = clip.MoverPositions[0];
-                    moverPos.y -= baselinePos.y;
+                    moverPos.z -= baselinePos.z;
                     var swayPos = new UnityEngine.Vector3(moverPos.x, moverPos.y, moverPos.z);
                     var restPos = new UnityEngine.Vector3(_rageRestPos[0].x, _rageRestPos[0].y, _rageRestPos[0].z);
                     rageLocalPos[0] = UnityEngine.Vector3.Lerp(rageLocalPos[0], restPos + swayPos, blendT);

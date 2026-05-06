@@ -3,6 +3,7 @@ using Unity.CharacterController;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace IVUnity.ECS.GameMode
@@ -104,10 +105,17 @@ namespace IVUnity.ECS.GameMode
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            var hasPhysics = SystemAPI.HasSingleton<PhysicsWorldSingleton>();
+            var collWorld = hasPhysics
+                ? SystemAPI.GetSingleton<PhysicsWorldSingleton>().CollisionWorld
+                : default;
+
             new OrbitCameraLateUpdateJob
             {
                 DeltaTime = SystemAPI.Time.DeltaTime,
                 LocalToWorldLookup = SystemAPI.GetComponentLookup<LocalToWorld>(false),
+                CollisionWorld = collWorld,
+                HasPhysics = hasPhysics,
             }.Schedule();
         }
 
@@ -116,9 +124,11 @@ namespace IVUnity.ECS.GameMode
         public partial struct OrbitCameraLateUpdateJob : IJobEntity
         {
             public float DeltaTime;
+            public bool HasPhysics;
             public ComponentLookup<LocalToWorld> LocalToWorldLookup;
+            [ReadOnly] public CollisionWorld CollisionWorld;
 
-            void Execute(Entity entity, in OrbitCamera cam, in OrbitCameraControl ctrl)
+            void Execute(Entity entity, ref OrbitCamera cam, in OrbitCameraControl ctrl)
             {
                 if (!LocalToWorldLookup.TryGetComponent(ctrl.FollowedCharacterEntity, out var charLtw))
                     return;
@@ -127,8 +137,40 @@ namespace IVUnity.ECS.GameMode
                 float3 targetPos = charLtw.Position + cam.FollowOffset;
 
                 quaternion camRot = OrbitCameraSimulationSystem.CalculateCameraRotation(targetUp, cam.PlanarForward, cam.PitchAngle);
-                float3 camPos = targetPos + (-MathUtilities.GetForwardFromRotation(camRot) * cam.SmoothedTargetDistance);
+                float3 camDir = -MathUtilities.GetForwardFromRotation(camRot);
+                float desiredDist = cam.SmoothedTargetDistance;
 
+                // Sphere cast from target toward camera to detect obstruction
+                float obstructedDist = desiredDist;
+                if (HasPhysics && cam.ObstructionRadius > 0f)
+                {
+                    var sphere = SphereCollider.Create(
+                        new SphereGeometry { Radius = cam.ObstructionRadius },
+                        cam.ObstructionFilter);
+
+                    unsafe
+                    {
+                        var castInput = new ColliderCastInput(
+                            sphere, targetPos,
+                            targetPos + camDir * desiredDist);
+
+                        if (CollisionWorld.CastCollider(castInput, out var hit))
+                        {
+                            obstructedDist = math.max(hit.Fraction * desiredDist, cam.ObstructionMinDistance);
+                        }
+                    }
+
+                    sphere.Dispose();
+                }
+
+                // Snap in when obstructed, smooth out when clear
+                if (obstructedDist < cam.ObstructedDistance)
+                    cam.ObstructedDistance = obstructedDist;
+                else
+                    cam.ObstructedDistance = math.lerp(cam.ObstructedDistance, obstructedDist,
+                        MathUtilities.GetSharpnessInterpolant(cam.DistanceMovementSharpness, DeltaTime));
+
+                float3 camPos = targetPos + camDir * cam.ObstructedDistance;
                 LocalToWorldLookup[entity] = new LocalToWorld { Value = new float4x4(camRot, camPos) };
             }
         }

@@ -128,7 +128,7 @@ namespace IVUnity.ECS.GameMode
                 Vertex0 = new float3(0, CapsuleRadius, 0),
                 Vertex1 = new float3(0, pedHeight - CapsuleRadius, 0),
                 Radius = CapsuleRadius,
-            });
+            }, PhysicsLayers.CharacterFilter);
             em.SetComponentData(e, new PhysicsCollider { Value = capsule });
             em.SetSharedComponent(e, new PhysicsWorldIndex { Value = 0 });
 
