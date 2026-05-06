@@ -159,11 +159,14 @@ namespace IVUnity.ECS.GameMode
                 ref rot, body.RotationFromParent,
                 baseContext.Time.DeltaTime, body.LastPhysicsUpdateDeltaTime);
 
-            if (math.lengthsq(ctrl.MoveVector) > 0f)
+            // Rotate toward move direction (inverted for bone 0 model-space emulation)
+            // Isolate XZ for facing — Y would introduce roll
+            float3 facingDir = new float3(-ctrl.MoveVector.x, 0f, -ctrl.MoveVector.z);
+            if (math.lengthsq(facingDir) > 0f)
             {
                 CharacterControlUtilities.SlerpRotationTowardsDirectionAroundUp(
                     ref rot, baseContext.Time.DeltaTime,
-                    math.normalizesafe(ctrl.MoveVector),
+                    math.normalizesafe(facingDir),
                     MathUtilities.GetUpFromRotation(rot),
                     cc.RotationSharpness);
             }

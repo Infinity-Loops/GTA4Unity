@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using IVUnity.ECS.Ped;
 using IVUnity.Ped;
 using IVUnity.Resolver;
@@ -63,7 +64,7 @@ namespace IVUnity.ECS.GameMode
             if (spawnPoint != null)
                 startPos = (float3)spawnPoint.transform.position;
 
-            string pedName = FindFirstPedName();
+            string pedName = FindRandomMPedName();
             if (pedName == null)
             {
                 Debug.LogError("[PedSpawn] No ped model found in componentpeds.img");
@@ -335,38 +336,37 @@ namespace IVUnity.ECS.GameMode
                 skeletonData.ParentIndices, skeletonData.RestPose,
                 skeletonData.RageRestPositions, skeletonData.RageRestRotations);
 
-            int idleClip = animSystem.GetClipIndex("idle");
-            if (idleClip < 0) idleClip = animSystem.GetClipIndex("idle_a");
-            int walkClip = animSystem.GetClipIndex("walk");
-            int runClip = animSystem.GetClipIndex("run");
-            if (runClip < 0) runClip = animSystem.GetClipIndex("run");
-            int sprintClip = animSystem.GetClipIndex("sprint");
-            if (sprintClip < 0) sprintClip = runClip;
-
             em.AddComponentData(meshParent, new PedMoveBlend
             {
                 DesiredSpeed = 0f,
-                IdleClip = idleClip,
-                WalkClip = walkClip,
-                RunClip = runClip,
-                SprintClip = sprintClip,
+                DirectionAngle = 0f,
             });
         }
 
-        private string FindFirstPedName()
+        private string FindRandomMPedName()
         {
-            if (pedsIde == null || pedsIde.Count == 0) return null;
+            if (pedsIde == null || pedsIde.Count == 0)
+                return null;
 
-            var keys = new System.Collections.Generic.List<string>(pedsIde.Keys);
-            keys.Sort(System.StringComparer.OrdinalIgnoreCase);
+            string selected = null;
+            int count = 0;
 
-            foreach (string name in keys)
+            foreach (var name in pedsIde.Keys)
             {
-                if (gameFiles.ContainsKey(name.ToLower() + ".wdd") && pedVariations.ContainsKey(name))
-                    return name;
+                if (!name.StartsWith("M_", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!gameFiles.ContainsKey(name.ToLowerInvariant() + ".wdd") ||
+                    !pedVariations.ContainsKey(name))
+                    continue;
+
+                count++;
+
+                if (UnityEngine.Random.Range(0, count) == 0)
+                    selected = name;
             }
 
-            return null;
+            return selected;
         }
 
         private float LoadPedMeshes(EntityManager em, Entity meshParent, string pedName, PedSkeletonBuilder.SkeletonData skeletonData)

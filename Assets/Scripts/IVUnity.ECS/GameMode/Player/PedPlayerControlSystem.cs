@@ -70,7 +70,7 @@ namespace IVUnity.ECS.GameMode
                     MathUtilities.GetForwardFromRotation(cameraRot), charUp));
                 float3 camRight = MathUtilities.GetRightFromRotation(cameraRot);
 
-                charCtrl.MoveVector = inputs.ValueRO.MoveInput.y * camForward + inputs.ValueRO.MoveInput.x * camRight;
+                charCtrl.MoveVector = (inputs.ValueRO.MoveInput.y * camForward) + (inputs.ValueRO.MoveInput.x * camRight);
                 charCtrl.MoveVector = MathUtilities.ClampToMaxLength(charCtrl.MoveVector, 1f);
                 charCtrl.MoveSpeed = inputs.ValueRO.MoveSpeed;
                 charCtrl.Jump = inputs.ValueRO.JumpPressed.IsSet(tick);

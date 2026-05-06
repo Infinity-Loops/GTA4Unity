@@ -34,6 +34,17 @@ namespace IVUnity.Ped
             var localTransforms = new LocalTransform[boneCount];
             var parentIndices = new int[boneCount];
 
+            // Create virtual root that cancels bone 0's base facing.
+            // This lets the entity facing + bone 0 animation combine correctly.
+            var bone0 = resourceSkeleton.Bones[0];
+            var bone0Q = bone0.RotationQuaternion;
+            quaternion bone0Unity = math.normalizesafe(new quaternion(bone0Q.X, -bone0Q.Z, bone0Q.Y, bone0Q.W));
+            quaternion virtualRootRot = math.inverse(bone0Unity);
+
+            Entity virtualRoot = em.CreateEntity(typeof(LocalTransform), typeof(LocalToWorld), typeof(Parent));
+            em.SetComponentData(virtualRoot, LocalTransform.FromRotation(virtualRootRot));
+            em.SetComponentData(virtualRoot, new Parent { Value = meshParent });
+
             for (int i = 0; i < boneCount; i++)
             {
                 boneEntities[i] = em.CreateEntity(
@@ -57,7 +68,7 @@ namespace IVUnity.Ped
                 em.SetComponentData(boneEntities[i], lt);
                 em.SetComponentData(boneEntities[i], new BoneIndex { Value = i });
 
-                Entity parentEntity = parentIndices[i] >= 0 ? boneEntities[parentIndices[i]] : meshParent;
+                Entity parentEntity = parentIndices[i] >= 0 ? boneEntities[parentIndices[i]] : virtualRoot;
                 em.SetComponentData(boneEntities[i], new Parent { Value = parentEntity });
             }
 

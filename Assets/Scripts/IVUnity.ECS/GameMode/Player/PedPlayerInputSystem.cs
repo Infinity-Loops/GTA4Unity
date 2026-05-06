@@ -67,6 +67,16 @@ namespace IVUnity.ECS.GameMode
                                       moveSpeed <= 2f ? 1f :
                                       moveSpeed <= 4f ? 2f : 3f;
                     blend.DesiredSpeed = math.lerp(blend.DesiredSpeed, animSpeed, SystemAPI.Time.DeltaTime * 5f);
+
+                    // Direction angle from input (0=fwd, 90=right, 180=back, -90=left)
+                    var input = EntityManager.GetComponentData<PedPlayerInputs>(
+                        SystemAPI.QueryBuilder().WithAll<PedPlayer>().Build().GetSingletonEntity());
+                    float2 move = input.MoveInput;
+                    if (math.lengthsq(move) > 0.01f)
+                        blend.DirectionAngle = math.degrees(math.atan2(move.x, move.y));
+                    else
+                        blend.DirectionAngle = 0f;
+
                     EntityManager.SetComponentData(child, blend);
                     break;
                 }

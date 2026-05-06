@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using IVUnity.ECS.GameMode;
 using IVUnity.Ped;
 using RageLib.Animation;
 using Unity.Entities;
@@ -11,24 +12,10 @@ using File = RageLib.FileSystem.Common.File;
 
 namespace IVUnity.ECS.Ped
 {
-    public struct PedAnimState : IComponentData
-    {
-        public int CurrentClipIndex;
-        public float Time;
-        public float Speed;
-    }
-
     public struct PedMoveBlend : IComponentData
     {
-        public float DesiredSpeed;
-        public float IdleTime;
-        public float WalkTime;
-        public float RunTime;
-        public float SprintTime;
-        public int IdleClip;
-        public int WalkClip;
-        public int RunClip;
-        public int SprintClip;
+        public float DesiredSpeed;    // 0=idle, 1=walk, 2=run, 3=sprint
+        public float DirectionAngle;  // degrees relative to facing: 0=fwd, 90=right, 180=back, -90=left
     }
 
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderFirst = true)]
@@ -54,9 +41,11 @@ namespace IVUnity.ECS.Ped
                 return idx;
             return -1;
         }
+
         private SkeletonDebugGizmo _debugGizmo;
-        private HashSet<int> _bonesWithTracks;
         private PedTwistSolver _twistSolver;
+        private PedMoveBlendTree _blendTree;
+        private float[] _clipTimes;
 
         public void Configure(AnimationClip[] clips, Dictionary<string, int> clipsByName,
             Entity[] boneEntities, ushort[] boneIds, int[] parentIndices,
@@ -70,34 +59,25 @@ namespace IVUnity.ECS.Ped
             _rageRestPos = rageRestPos;
             _rageRestRot = rageRestRot;
             _boneEntities = boneEntities;
+            _clipTimes = new float[clips.Length];
 
             _boneIdToEntityIndex = new Dictionary<ushort, int>();
             for (int i = 0; i < boneIds.Length; i++)
                 _boneIdToEntityIndex[boneIds[i]] = i;
 
-            // Collect all bone indices that have at least one track across all clips
-            _bonesWithTracks = new HashSet<int>();
-            foreach (var clip in clips)
-            {
-                if (clip == null) continue;
-                foreach (var bt in clip.BoneTracks)
-                {
-                    if (_boneIdToEntityIndex.TryGetValue(bt.BoneId, out int bi))
-                        _bonesWithTracks.Add(bi);
-                }
-            }
-
             _twistSolver = new PedTwistSolver();
             _twistSolver.Configure(_boneIdToEntityIndex, rageRestRot);
+
+            _blendTree = new PedMoveBlendTree();
+            _blendTree.Configure(clipsByName);
 
             var go = new UnityEngine.GameObject("SkeletonDebug");
             _debugGizmo = go.AddComponent<SkeletonDebugGizmo>();
             _debugGizmo.ParentIndices = parentIndices;
             _debugGizmo.BonePositions = new UnityEngine.Vector3[_boneCount];
 
-            Debug.Log($"[PedAnim] Configured: {clips.Length} clips, {_boneIdToEntityIndex.Count} bone mappings, {_bonesWithTracks.Count} bones with tracks");
+            Debug.Log($"[PedAnim] Configured: {clips.Length} clips, {_boneIdToEntityIndex.Count} bone mappings");
         }
-
 
         public int GetClipIndex(string name)
         {
@@ -123,22 +103,21 @@ namespace IVUnity.ECS.Ped
 
             float dt = SystemAPI.Time.DeltaTime;
 
-            float speed = math.clamp(blend.DesiredSpeed, 0f, 4f);
-            ComputeBlendWeights(speed, out float wIdle, out float wWalk, out float wRun, out float wSprint);
+            _blendTree.Update(blend.DesiredSpeed, blend.DirectionAngle, 0f, dt);
 
-            var layers = new BlendLayer[4];
-            int layerCount = 0;
-            if (wIdle > 0.001f && blend.IdleClip >= 0)
-                layers[layerCount++] = new BlendLayer { ClipIndex = blend.IdleClip, Weight = wIdle, Time = blend.IdleTime };
-            if (wWalk > 0.001f && blend.WalkClip >= 0)
-                layers[layerCount++] = new BlendLayer { ClipIndex = blend.WalkClip, Weight = wWalk, Time = blend.WalkTime };
-            if (wRun > 0.001f && blend.RunClip >= 0)
-                layers[layerCount++] = new BlendLayer { ClipIndex = blend.RunClip, Weight = wRun, Time = blend.RunTime };
-            if (wSprint > 0.001f && blend.SprintClip >= 0)
-                layers[layerCount++] = new BlendLayer { ClipIndex = blend.SprintClip, Weight = wSprint, Time = blend.SprintTime };
+            // Advance all clip times
+            for (int i = 0; i < _clips.Length; i++)
+            {
+                if (_clips[i] != null && _clips[i].Duration > 0)
+                {
+                    _clipTimes[i] += dt;
+                    _clipTimes[i] %= _clips[i].Duration;
+                }
+            }
 
-            if (layerCount == 0) return;
+            if (_blendTree.OutputCount == 0) return;
 
+            // Initialize local transforms to rest
             var rageLocalPos = new UnityEngine.Vector3[_boneCount];
             var rageLocalRot = new UnityEngine.Quaternion[_boneCount];
             for (int i = 0; i < _boneCount; i++)
@@ -147,22 +126,23 @@ namespace IVUnity.ECS.Ped
                 rageLocalRot[i] = new UnityEngine.Quaternion(_rageRestRot[i].value.x, _rageRestRot[i].value.y, _rageRestRot[i].value.z, _rageRestRot[i].value.w);
             }
 
+            // Blend active clips from the tree
             float totalWeight = 0f;
-
-            for (int li = 0; li < layerCount; li++)
+            for (int li = 0; li < _blendTree.OutputCount; li++)
             {
-                var layer = layers[li];
-                var clip = _clips[layer.ClipIndex];
+                var entry = _blendTree.GetOutput(li);
+                var clip = _clips[entry.ClipIndex];
                 if (clip == null || clip.FrameCount <= 1) continue;
 
-                SampleFrame(clip, layer.Time, out int f0, out int f1, out float frac);
-                float w = layer.Weight;
+                SampleFrame(clip, _clipTimes[entry.ClipIndex], out int f0, out int f1, out float frac);
+                float w = entry.Weight;
                 totalWeight += w;
                 float blendT = totalWeight > 0 ? w / totalWeight : 1f;
 
+                bool isIdleClip = entry.ClipIndex == _blendTree.IdleClipIndex;
+
                 foreach (var bt in clip.BoneTracks)
                 {
-                    if (bt.BoneId == 0) continue;
                     if (!_boneIdToEntityIndex.TryGetValue(bt.BoneId, out int bi)) continue;
                     if (bi >= _boneCount) continue;
 
@@ -170,6 +150,10 @@ namespace IVUnity.ECS.Ped
                     quaternion q1 = bt.Rotations[f1];
                     if (math.dot(q0, q1) < 0) q1.value = -q1.value;
                     quaternion rageQ = math.slerp(q0, q1, frac);
+
+                    // Correct idle clip's bone 0 orientation to match locomotion clips
+                    if (bi == 0 && isIdleClip)
+                        rageQ = math.mul(quaternion.AxisAngle(new float3(0, 0, 1), math.radians(_blendTree.IdleFacingOffset)), rageQ);
 
                     var q = new UnityEngine.Quaternion(rageQ.value.x, rageQ.value.y, rageQ.value.z, rageQ.value.w);
 
@@ -179,17 +163,20 @@ namespace IVUnity.ECS.Ped
                     rageLocalRot[bi] = UnityEngine.Quaternion.Slerp(rageLocalRot[bi], q, blendT);
                 }
 
-                // Apply bone 0 position from mover track (hip sway in RAGE space)
                 if (clip.MoverPositions != null && clip.MoverPositions.Length > 0)
                 {
                     float3 p0 = clip.MoverPositions[f0];
                     float3 p1 = clip.MoverPositions[math.min(f1, clip.MoverPositions.Length - 1)];
                     float3 moverPos = math.lerp(p0, p1, frac);
+                    // Use relative Y (subtract frame 0 baseline) to prevent floating between clips
+                    float3 baselinePos = clip.MoverPositions[0];
+                    moverPos.y -= baselinePos.y;
                     var swayPos = new UnityEngine.Vector3(moverPos.x, moverPos.y, moverPos.z);
                     var restPos = new UnityEngine.Vector3(_rageRestPos[0].x, _rageRestPos[0].y, _rageRestPos[0].z);
                     rageLocalPos[0] = UnityEngine.Vector3.Lerp(rageLocalPos[0], restPos + swayPos, blendT);
                 }
             }
+
 
             // Compose RAGE world transforms
             var rageWorldPos = new Vector3[_boneCount];
@@ -211,6 +198,7 @@ namespace IVUnity.ECS.Ped
 
             _twistSolver.Solve(rageLocalRot, rageWorldPos, rageWorldRot, _parentIndices);
 
+
             var skinMatrices = EntityManager.GetBuffer<Unity.Deformations.SkinMatrix>(entity);
             var bindPoses = EntityManager.GetBuffer<SkinnedMeshBindPose>(entity);
 
@@ -229,73 +217,20 @@ namespace IVUnity.ECS.Ped
                 };
             }
 
-            // Advance clip times
-            if (blend.IdleClip >= 0 && _clips[blend.IdleClip] != null)
-                blend.IdleTime = AdvanceClipTime(blend.IdleTime, _clips[blend.IdleClip], dt);
-            if (blend.WalkClip >= 0 && _clips[blend.WalkClip] != null)
-                blend.WalkTime = AdvanceClipTime(blend.WalkTime, _clips[blend.WalkClip], dt);
-            if (blend.RunClip >= 0 && _clips[blend.RunClip] != null)
-                blend.RunTime = AdvanceClipTime(blend.RunTime, _clips[blend.RunClip], dt);
-            if (blend.SprintClip >= 0 && _clips[blend.SprintClip] != null)
-                blend.SprintTime = AdvanceClipTime(blend.SprintTime, _clips[blend.SprintClip], dt);
-
             LastRageWorldPos = rageWorldPos;
             LastRageWorldRot = rageWorldRot;
 
-            EntityManager.SetComponentData(entity, blend);
-
             if (_debugGizmo != null)
             {
-                var rootLtw = EntityManager.GetComponentData<SkinnedMeshRootEntity>(entity);
-                if (EntityManager.HasComponent<LocalToWorld>(rootLtw.Value))
+                var rootRef = EntityManager.GetComponentData<SkinnedMeshRootEntity>(entity);
+                if (EntityManager.HasComponent<LocalToWorld>(rootRef.Value))
                 {
-                    var ltw = EntityManager.GetComponentData<LocalToWorld>(rootLtw.Value);
+                    var ltw = EntityManager.GetComponentData<LocalToWorld>(rootRef.Value);
                     _debugGizmo.Offset = ltw.Position;
                     _debugGizmo.Rotation = ltw.Rotation;
                 }
                 for (int i = 0; i < _boneCount; i++)
                     _debugGizmo.BonePositions[i] = RageCoordinates.Position(rageWorldPos[i]);
-            }
-        }
-
-        struct BlendLayer
-        {
-            public int ClipIndex;
-            public float Weight;
-            public float Time;
-        }
-
-        static void ComputeBlendWeights(float speed, out float idle, out float walk, out float run, out float sprint)
-        {
-            if (speed < 1f)
-            {
-                idle = 1f - speed;
-                walk = speed;
-                run = 0f;
-                sprint = 0f;
-            }
-            else if (speed < 2f)
-            {
-                float t = speed - 1f;
-                idle = 0f;
-                walk = 1f - t;
-                run = t;
-                sprint = 0f;
-            }
-            else if (speed < 3f)
-            {
-                float t = speed - 2f;
-                idle = 0f;
-                walk = 0f;
-                run = 1f - t;
-                sprint = t;
-            }
-            else
-            {
-                idle = 0f;
-                walk = 0f;
-                run = 0f;
-                sprint = 1f;
             }
         }
 
@@ -312,13 +247,6 @@ namespace IVUnity.ECS.Ped
                 frac = 1f;
             }
             if (f0 < 0) { f0 = 0; f1 = 0; frac = 0; }
-        }
-
-        static float AdvanceClipTime(float time, AnimationClip clip, float dt)
-        {
-            time += dt;
-            if (clip.Duration > 0) time %= clip.Duration;
-            return time;
         }
 
         public static LoadResult LoadFromWad(Dictionary<string, File> gameFiles, string wadName)
